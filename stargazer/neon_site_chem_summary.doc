@@ -1,0 +1,8 @@
+
+<table style="text-align:center"><tr><td colspan="8" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">Statistic</td><td>N</td><td>Mean</td><td>St. Dev.</td><td>Min</td><td>Pctl(25)</td><td>Pctl(75)</td><td>Max</td></tr>
+<tr><td colspan="8" style="border-bottom: 1px solid black"></td></tr><tr><td style="text-align:left">n_percent_foliar</td><td>32</td><td>1.782</td><td>0.523</td><td>0.854</td><td>1.396</td><td>2.203</td><td>3.010</td></tr>
+<tr><td style="text-align:left">foliar_phosphorus_conc</td><td>22</td><td>0.171</td><td>0.071</td><td>0.066</td><td>0.130</td><td>0.211</td><td>0.342</td></tr>
+<tr><td style="text-align:left">np_ratio_foliar</td><td>22</td><td>11.777</td><td>3.647</td><td>6.157</td><td>9.290</td><td>13.298</td><td>24.058</td></tr>
+<tr><td style="text-align:left">cn_ratio_foliar</td><td>31</td><td>32.088</td><td>10.924</td><td>16.137</td><td>23.761</td><td>37.398</td><td>55.043</td></tr>
+<tr><td style="text-align:left">cp_ratio_foliar</td><td>22</td><td>366.148</td><td>190.017</td><td>130.800</td><td>269.715</td><td>392.658</td><td>1,003.506</td></tr>
+<tr><td colspan="8" style="border-bottom: 1px solid black"></td></tr></table>

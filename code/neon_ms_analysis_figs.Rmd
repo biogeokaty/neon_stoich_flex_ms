@@ -1,0 +1,1153 @@
+---
+title: "neon_ms_analysis_figs"
+author: Katherine A. Dynarski, Fiona M. Soper, Sasha C. Reed, William R. Wieder, Cory
+  C. Cleveland
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output: github_document
+editor_options:
+  chunk_output_type: console
+---
+
+# Setup and housekeeping
+```{r, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE,
+                      fig.width=8.5, fig.asp=0.8, out.width="100%", dpi=300)
+```
+
+```{r housekeeping}
+# Load packages
+library(ggpubr)
+library(cowplot)
+library(here)
+library(tidyverse)
+library(png)
+library(magick)
+library(stargazer)
+library(rgdal)
+library(broom)
+library(ggrepel)
+library(flextable)
+library(vip)
+library(partykit)
+
+# Load my scripts
+source(here("code", "variance_partitioning_function.R"))
+source(here("code", "ggplot_custom_themes.R"))
+source(here("code", "hsd_letters_function.R"))
+# Data cleanup and wrangling is in neon_data_cleanup.R
+
+# Make lists of summary functions for dplyr
+min_max <- list(
+  min = ~min(.x, na.rm=TRUE), 
+  max = ~max(.x, na.rm=TRUE)
+)
+
+mean_sd <- list(
+  mean = ~mean(.x, na.rm = TRUE), 
+  sd = ~sd(.x, na.rm = TRUE)
+)
+
+# Load data
+foliar_chem <- read.csv(here("data", "neon_foliar_chem.csv"))
+neon_site <- read.csv(here("data", "neon_data_site_avg.csv"))
+foliar_all_site <- read.csv(here("data", "neon_foliar_chem_all_site_vars.csv"))
+common_foliar_site <- read.csv(here("data", "common_foliar_site.csv"))
+```
+
+# Analysis and figs - NEON site metadata
+
+## Figure S1: Map of field sites
+
+``` {r fig s1 - map of field sites}
+# read in shapefile downloaded from NEON
+neon_domains <- readOGR(dsn=here("data", "NEONDomains_0"),
+                                 layer="NEON_Domains")
+neon_domains$id <- row.names(neon_domains)
+
+domains_tidy <- tidy(neon_domains) # use tidy in broom package to turn shapefile into a nice tibble
+
+domains_tidy2 <- left_join(domains_tidy, neon_domains@data)
+
+neon_site_map <- neon_site %>%
+  select(site_id, site_name, latitude, longitude) %>%
+  rename(lat = latitude,
+         long = longitude)
+
+# Option that has the NEON domains colored in
+# map of mainland + PR with insets for HI and AK
+
+neon_off <- c("PUUM", "DEJU", "BONA", "TOOL")
+neon_ak <- c("DEJU", "BONA", "TOOL")
+
+neon_points_mainland <- neon_site_map %>%
+  filter(!(site_id %in% neon_off))
+
+neon_points_ak <- neon_site_map %>%
+  filter(site_id %in% neon_ak)
+
+neon_points_hi <- neon_site_map %>%
+  filter(site_id == "PUUM")
+
+neon_map_mainland <- ggplot() +
+  geom_polygon(data=domains_tidy2, 
+               aes(x = long, y = lat, group = group, fill=DomainName),
+               color = "black", size = 0.1) +
+  geom_point(data=neon_points_mainland, aes(x=long, y=lat), size=1) +
+  geom_text_repel(data=neon_points_mainland, aes(x=long, y=lat, label=site_id), 
+             color="black") +
+  coord_fixed(xlim = c(-125, -60),  ylim = c(18, 60), ratio=1.3) +
+  labs(x=expression(Longitude~(degree)), y=expression(Latitude~(degree)),
+       fill="Domain") +
+  theme_classic() 
+
+neon_map_mainland2 <- neon_map_mainland + theme(legend.position="none")
+
+neon_map_ak <- ggplot() +
+  geom_polygon(data=domains_tidy2, 
+               aes(x = long, y = lat, group = group, fill=DomainName),
+               color = "black", size = 0.1) +
+  geom_point(data=neon_points_ak, aes(x=long, y=lat), size=1) +
+  geom_text_repel(data=neon_points_ak, aes(x=long, y=lat, label=site_id), 
+                  color="black") +
+  coord_fixed(xlim = c(-170, -130),  ylim = c(52, 72), ratio=1.6) +
+  labs(x=expression(Longitude~(degree)), y=expression(Latitude~(degree))) +
+  theme_classic() +
+  theme(axis.title=element_blank())
+
+neon_map_ak2 <- neon_map_ak + theme(legend.position="none")
+
+neon_map_hi <- ggplot() +
+  geom_polygon(data=domains_tidy2, 
+               aes(x = long, y = lat, group = group, fill=DomainName),
+               color = "black", size = 0.1) +
+  geom_point(data=neon_points_hi, aes(x=long, y=lat), size=1) +
+  geom_text_repel(data=neon_points_hi, aes(x=long, y=lat, label=site_id), 
+                  color="black") +
+  coord_fixed(xlim = c(-161, -152.5),  ylim = c(17.5, 23), ratio=1.3) +
+  labs(x=expression(Longitude~(degree)), y=expression(Latitude~(degree))) +
+  theme_classic() +
+  theme(axis.title=element_blank())
+
+neon_map_hi2 <- neon_map_hi + theme(legend.position="none")
+
+map_legend <- get_legend(neon_map_mainland)
+
+neon_map3 <- ggdraw(neon_map_mainland2) +
+  draw_plot(neon_map_ak2, x=.18, y=.73, width=.25, height=.3) +
+  draw_plot(neon_map_hi2, x=0.17, y=0.08, width=0.25, height=0.25)
+
+neon_map_space<- plot_grid(neon_map3, NULL,
+                          nrow=1, rel_widths=c(1,0.2))
+map_w_legend <- neon_map_space +
+  draw_grob(map_legend, x=0.7, y=0.1, width=.25, height=.8)
+
+figs1_map_w_legend <- plot_grid(neon_map3, map_legend, 
+          nrow=1, rel_widths=c(1, 0.1), rel_heights=c(1,1))
+
+figs1_map_w_legend
+
+```
+
+## Table 1 - Average environmental characteristics at each NEON site
+
+``` {r table s1 - neon site characteristics}
+site_table <- neon_site %>%
+  select(site_id, site_name, dominant_nlcd_classes, latitude, longitude, elev_m, 
+         mat_deg_c, map_mm, c_percent_soil, n_percent_soil, netnmin_ugpergperday, 
+         extractable_p_soil, et_mm_avg, npp_kg_c_avg) %>%
+  mutate(across(c_percent_soil, round, digits=1)) %>%
+  mutate(across(n_percent_soil:netnmin_ugpergperday, round, digits=2)) %>%
+  mutate(across(extractable_p_soil, round, digits=2))
+
+flextable(site_table)
+```
+
+## Range of environmental conditions at NEON sites
+
+Note: this is not used in a figure or table, but referenced in the text
+
+``` {r RANGE of environmental conditions at NEON sites for text reference}
+# also make a table with the range in environmental conditions at all sites
+site_range_table <- site_table %>%
+  summarize(across(where(is.numeric), min_max)) %>%
+  transmute(lat_range= paste(latitude_min, latitude_max, sep="-"),
+         long_range = paste(longitude_min, longitude_max, sep="-"),
+         elev_range = paste(elev_m_min, elev_m_max, sep="-"),
+         mat_range = paste(mat_deg_c_min, mat_deg_c_max, sep="-"),
+         map_range = paste(map_mm_min, map_mm_max, sep="-"),
+         et_range = paste(et_mm_avg_min, et_mm_avg_max, sep="-"),
+         soil_c_range = paste(c_percent_soil_min, c_percent_soil_max, sep="-"),
+         soil_n_range = paste(n_percent_soil_min, 
+                              n_percent_soil_max, sep="-"),
+         nmin_range = paste(netnmin_ugpergperday_min, netnmin_ugpergperday_max, sep="-"),
+         soil_extractable_p_range = paste(extractable_p_soil_min, 
+                                          extractable_p_soil_max, sep="-"),
+         npp_range = paste(npp_kg_c_avg_min, npp_kg_c_avg_max, sep="-")) %>%
+  pivot_longer(everything())
+
+flextable(site_range_table)
+```
+
+## Figure S3 - correlation between MODIS NPP and site-average N mineralization rate
+
+``` {r fig s3 - correlation between modis NPP and N mineralization rates}
+figs3_npp_nmin <- ggplot(neon_site, 
+                         aes(x=netnmin_ugpergperday, y=npp_kg_c_avg)) +
+  geom_point() +
+  geom_smooth(method="lm", formula = y~x) +
+  labs(x=expression("Mean site net N mineralization rate "(mu*g~N~g^-1~soil~day^-1)),
+                    y=expression(NPP~(kg~C~m^-2~yr^-1))) +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           size=4) +
+  theme_katy_grid()
+
+figs3_npp_nmin
+
+```
+
+## Figure S4 - correlation between AET and soil P
+``` {r fig s4 - correlation between AET and soil P}
+figs4_aet_soilp <- ggplot(neon_site, aes(x=extractable_p_soil, y=et_mm_avg)) +
+  geom_point() +
+  geom_smooth(method="lm", formula = y~x) +
+  labs(x=expression("Soil extractable P"~(mg~P~kg^-1~soil)),
+       y=expression(AET~(mm~yr^-1))) +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           size=4) +
+  theme_katy_grid()
+
+figs4_aet_soilp
+```
+# Analysis and figs - site-averaged foliar chemistry
+
+## Range of foliar chemistry
+
+``` {r range of foliar chem}
+neon_site_foliar <- neon_site %>%
+  select(site_id, n_percent_foliar, foliar_phosphorus_conc, 
+         np_ratio_foliar, cn_ratio_foliar, cp_ratio_foliar)
+stargazer(neon_site_foliar, type="html", 
+          iqr=FALSE,
+          out=here("stargazer", "neon_site_chem_summary.doc"))
+```
+
+## Table 2 - Regression stats for site-averaged foliar chem
+
+``` {r save linear models with regression statistics}
+lm1.1 <- lm(n_percent_foliar~latitude, data=neon_site)
+lm1.2 <- lm(n_percent_foliar~et_mm_avg, data=neon_site)
+lm1.3 <- lm(n_percent_foliar~mat_deg_c, data=neon_site)
+lm1.4 <- lm(n_percent_foliar~map_mm, data=neon_site)
+lm1.5 <- lm(n_percent_foliar~n_percent_soil, data=neon_site)
+lm1.6 <- lm(n_percent_foliar~c_percent_soil, data=neon_site)
+lm1.7 <- lm(n_percent_foliar~netnmin_ugpergperday, data=neon_site)
+lm1.8 <- lm(n_percent_foliar~extractable_p_soil, data=neon_site)
+lm1.9 <- lm(n_percent_foliar~npp_kg_c_avg, data=neon_site)
+
+lm2.1 <- lm(foliar_phosphorus_conc~latitude, data=neon_site)
+lm2.2 <- lm(foliar_phosphorus_conc~et_mm_avg, data=neon_site)
+lm2.3 <- lm(foliar_phosphorus_conc~mat_deg_c, data=neon_site)
+lm2.4 <- lm(foliar_phosphorus_conc~map_mm, data=neon_site)
+lm2.5 <- lm(foliar_phosphorus_conc~n_percent_soil, data=neon_site)
+lm2.6 <- lm(foliar_phosphorus_conc~c_percent_soil, data=neon_site)
+lm2.7 <- lm(foliar_phosphorus_conc~netnmin_ugpergperday, data=neon_site)
+lm2.8 <- lm(foliar_phosphorus_conc~extractable_p_soil, data=neon_site)
+lm2.9 <- lm(foliar_phosphorus_conc~npp_kg_c_avg, data=neon_site)
+
+lm3.1 <- lm(np_ratio_foliar~latitude, data=neon_site)
+lm3.2 <- lm(np_ratio_foliar~et_mm_avg, data=neon_site)
+lm3.3 <- lm(np_ratio_foliar~mat_deg_c, data=neon_site)
+lm3.4 <- lm(np_ratio_foliar~map_mm, data=neon_site)
+lm3.5 <- lm(np_ratio_foliar~n_percent_soil, data=neon_site)
+lm3.6 <- lm(np_ratio_foliar~c_percent_soil, data=neon_site)
+lm3.7 <- lm(np_ratio_foliar~netnmin_ugpergperday, data=neon_site)
+lm3.8 <- lm(np_ratio_foliar~extractable_p_soil, data=neon_site)
+lm3.9 <- lm(np_ratio_foliar~npp_kg_c_avg, data=neon_site)
+
+lm4.1 <- lm(cn_ratio_foliar~latitude, data=neon_site)
+lm4.2 <- lm(cn_ratio_foliar~et_mm_avg, data=neon_site)
+lm4.3 <- lm(cn_ratio_foliar~mat_deg_c, data=neon_site)
+lm4.4 <- lm(cn_ratio_foliar~map_mm, data=neon_site)
+lm4.5 <- lm(cn_ratio_foliar~n_percent_soil, data=neon_site)
+lm4.6 <- lm(cn_ratio_foliar~c_percent_soil, data=neon_site)
+lm4.7 <- lm(cn_ratio_foliar~netnmin_ugpergperday, data=neon_site)
+lm4.8 <- lm(cn_ratio_foliar~extractable_p_soil, data=neon_site)
+lm4.9 <- lm(cn_ratio_foliar~npp_kg_c_avg, data=neon_site)
+
+lm5.1 <- lm(cp_ratio_foliar~latitude, data=neon_site)
+lm5.2 <- lm(cp_ratio_foliar~et_mm_avg, data=neon_site)
+lm5.3 <- lm(cp_ratio_foliar~mat_deg_c, data=neon_site)
+lm5.4 <- lm(cp_ratio_foliar~map_mm, data=neon_site)
+lm5.5 <- lm(cp_ratio_foliar~n_percent_soil, data=neon_site)
+lm5.6 <- lm(cp_ratio_foliar~c_percent_soil, data=neon_site)
+lm5.7 <- lm(cp_ratio_foliar~netnmin_ugpergperday, data=neon_site)
+lm5.8 <- lm(cp_ratio_foliar~extractable_p_soil, data=neon_site)
+lm5.9 <- lm(cp_ratio_foliar~npp_kg_c_avg, data=neon_site)
+```
+
+``` {r table 2 - foliar chemistry regression stats}
+corr_vars <- c("Latitude", "AET", "MAT", "MAP", "Soil N", "Soil C", "Soil N mineralization rate", "Soil extractable P", "NPP")
+n_corr_table <- bind_rows(glance(lm1.1), glance(lm1.2), glance(lm1.3), glance(lm1.4),
+                          glance(lm1.5), glance(lm1.6), glance(lm1.7), glance(lm1.8),
+                          glance(lm1.9)) %>%
+  mutate(variable = corr_vars) %>%
+  mutate(across(r.squared, round, digits=2)) %>%
+  mutate(across(p.value, round, digits=3)) %>%
+  mutate(rsquared = paste("R2", r.squared, sep="=")) %>%
+  mutate(pval = paste("p-value", p.value, sep="=")) %>%
+  unite("stats", rsquared:pval, sep=", ") %>%
+  select(variable, stats)
+
+p_corr_table <- bind_rows(glance(lm2.1), glance(lm2.2), glance(lm2.3), glance(lm2.4),
+                          glance(lm2.5), glance(lm2.6), glance(lm2.7), glance(lm2.8),
+                          glance(lm2.9)) %>%
+  mutate(variable = corr_vars) %>%
+  mutate(across(r.squared, round, digits=2)) %>%
+  mutate(across(p.value, round, digits=3)) %>%
+  mutate(rsquared = paste("R2", r.squared, sep="=")) %>%
+  mutate(pval = paste("p-value", p.value, sep="=")) %>%
+  unite("stats", rsquared:pval, sep=", ") %>%
+  select(variable, stats)
+
+np_corr_table <- bind_rows(glance(lm3.1), glance(lm3.2), glance(lm3.3), glance(lm3.4),
+                           glance(lm3.5), glance(lm3.6), glance(lm3.7), glance(lm3.8),
+                           glance(lm3.9)) %>%
+  mutate(variable = corr_vars) %>%
+  mutate(across(r.squared, round, digits=2)) %>%
+  mutate(across(p.value, round, digits=3)) %>%
+  mutate(rsquared = paste("R2", r.squared, sep="=")) %>%
+  mutate(pval = paste("p-value", p.value, sep="=")) %>%
+  unite("stats", rsquared:pval, sep=", ") %>%
+  select(variable, stats)
+
+cn_corr_table <- bind_rows(glance(lm4.1), glance(lm4.2), glance(lm4.3), glance(lm4.4),
+                           glance(lm4.5), glance(lm4.6), glance(lm4.7), glance(lm4.8),
+                           glance(lm4.9)) %>%
+  mutate(variable = corr_vars) %>%
+  mutate(across(r.squared, round, digits=2)) %>%
+  mutate(across(p.value, round, digits=3)) %>%
+  mutate(rsquared = paste("R2", r.squared, sep="=")) %>%
+  mutate(pval = paste("p-value", p.value, sep="=")) %>%
+  unite("stats", rsquared:pval, sep=", ") %>%
+  select(variable, stats)
+
+cp_corr_table <- bind_rows(glance(lm5.1), glance(lm5.2), glance(lm5.3), glance(lm5.4),
+                           glance(lm5.5), glance(lm5.6), glance(lm5.7), glance(lm5.8),
+                           glance(lm5.9)) %>%
+  mutate(variable = corr_vars) %>%
+  mutate(across(r.squared, round, digits=2)) %>%
+  mutate(across(p.value, round, digits=3)) %>%
+  mutate(rsquared = paste("R2", r.squared, sep="=")) %>%
+  mutate(pval = paste("p-value", p.value, sep="=")) %>%
+  unite("stats", rsquared:pval, sep=", ") %>%
+  select(variable, stats)
+
+corr_table1 <- left_join(n_corr_table, p_corr_table, by="variable", suffix=c("_n", "_p"))
+corr_table2 <- left_join(corr_table1, np_corr_table, by="variable")
+corr_table3 <- left_join(corr_table2, cn_corr_table, by="variable", suffix=c("_np", "_cn"))
+corr_table <- left_join(corr_table3, cp_corr_table, by="variable") %>%
+  rename("stats_cp" = "stats")
+
+flextable(corr_table)
+```
+
+```{r stargazer regression tables (to get slopes)}
+# Foliar N
+stargazer(lm1.1, lm1.2, lm1.3, lm1.4, lm1.5, lm1.6, lm1.7, lm1.8, lm1.9,  
+          type="html", single.row=T,
+          intercept.bottom = F,intercept.top = T,ci = T, digits=2,
+          title="Foliar N linear models",
+          covariate.labels =c("Intercept", "Latitude", "AET", "MAT", "MAP", 
+                              "Soil N", "Soil C", "Soil N mineralization rate", 
+                              "Soil extractable P", "NPP"),
+          out=here("stargazer", "foliar_n_table.doc"))
+
+# Foliar P
+stargazer(lm2.1, lm2.2, lm2.3, lm2.4, lm2.5, lm2.6, lm2.7, lm2.8, lm2.9,  
+          type="html", single.row=T,
+          intercept.bottom = F,intercept.top = T,ci = T, digits=2,
+          title="Foliar P linear models",
+          covariate.labels =c("Intercept", "Latitude", "AET", "MAT", "MAP", 
+                              "Soil N", "Soil C", "Soil N mineralization rate", 
+                              "Soil extractable P", "NPP"),
+          dep.var.labels="Foliar P (%)",
+          out=here("stargazer", "foliar_p_table.doc"))
+
+# Foliar N:P
+stargazer(lm3.1, lm3.2, lm3.3, lm3.4, lm3.5, lm3.6, lm3.7, lm3.8, lm3.9, 
+          type="html", single.row=T,
+          intercept.bottom = F,intercept.top = T,ci = T, digits=2,
+          title="Foliar N:P linear models",
+          covariate.labels =c("Intercept", "Latitude", "AET", "MAT", "MAP", 
+                              "Soil N", "Soil C", "Soil N mineralization rate", 
+                              "Soil extractable P", "NPP"),
+          dep.var.labels="Foliar N:P (mass)",
+          out=here("stargazer", "foliar_np_table.doc"))
+
+# Foliar C:N
+stargazer(lm4.1, lm4.2, lm4.3, lm4.4, lm4.5, lm4.6, lm4.7, lm4.8, lm4.9,  
+          type="html", single.row=T,
+          intercept.bottom = F,intercept.top = T,ci = T, digits=2,
+          title="Foliar C:N linear models",
+          covariate.labels =c("Intercept", "Latitude", "AET", "MAT", "MAP", 
+                              "Soil N", "Soil C", "Soil N mineralization rate", 
+                              "Soil extractable P", "NPP"),
+          dep.var.labels="Foliar C:N (mass)",
+          out=here("stargazer", "foliar_cn_table.doc"))
+
+# Foliar C:P
+stargazer(lm5.1, lm5.2, lm5.3, lm5.4, lm5.5, lm5.6, lm5.7, lm5.8, lm5.9,  
+          type="html", single.row=T,
+          intercept.bottom = F,intercept.top = T,ci = T, digits=2,
+          title="Foliar C:P linear models",
+          covariate.labels =c("Intercept", "Latitude", "AET", "MAT", "MAP", 
+                              "Soil N", "Soil C", "Soil N mineralization rate", 
+                              "Soil extractable P", "NPP"),
+          dep.var.labels="Foliar C:P (mass)",
+          out=here("stargazer", "foliar_cp_table.doc"))
+```
+
+## Figure 1 - Latitude vs foliar chem regressions
+
+``` {r fig 1 - latitude vs foliar chem regressions}
+# Foliar N vs. latitude 
+lat_n <- ggplot(neon_site, aes(x=latitude, y=n_percent_foliar)) +
+  geom_point() +
+  labs(x=expression(Latitude~(degree)), y="Foliar N concentration (%)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x = 20, label.y=2.75, size=4) +
+  theme_katy_grid()+
+  theme(axis.title.x=element_blank())
+
+# Foliar P vs. latitude
+lat_p <- ggplot(neon_site, aes(x=latitude, y=foliar_phosphorus_conc)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x=expression(Latitude~(degree)), y="Foliar P concentration (%)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x = 20, label.y=.3, size=4) +
+  stat_regline_equation(label.x=20, label.y=0.275, size=4) +
+  theme_katy_grid()  +
+  theme(axis.title.x=element_blank())
+
+# Foliar N:P vs. latitude 
+lat_np <- ggplot(neon_site, aes(x=latitude, y=np_ratio_foliar)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x=expression(Latitude~(degree)), y="Foliar N:P ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x = 20, label.y=21, size=4) +
+  stat_regline_equation(label.x=20, label.y=19, size=4) +
+  theme_katy_grid() +
+  theme(axis.title.x=element_blank())
+
+# Foliar C:N vs latitude
+lat_cn <- ggplot(neon_site, aes(x=latitude, y=cn_ratio_foliar)) +
+  geom_point() +
+  labs(x=expression(Latitude~(degree)), y="Foliar C:N ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x = 20, label.y=48, size=4) +
+  theme_katy_grid() +
+  theme(axis.title.x=element_blank())
+
+# Foliar CP ratio vs latitude
+lat_cp <- ggplot(neon_site, aes(x=latitude, y=cp_ratio_foliar)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x="", y="Foliar C:P ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x = 20, label.y=850, size=4) +
+  stat_regline_equation(label.x=20, label.y=750, size=4) +
+  theme_katy_grid() 
+```
+
+## Figure 1 - AET regressions
+
+``` {r fig 1 - aet regressions}
+et_n <- ggplot(neon_site, aes(x=et_mm_avg, y=n_percent_foliar)) +
+  geom_point() +
+  labs(x="Mean annual actual evapotranspiration (mm)", y="Foliar N concentration (%)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=250, label.y=2.9, size=4) +
+  theme_katy_grid() +
+  theme(axis.title.x=element_blank())
+
+et_p <- ggplot(neon_site, aes(x=et_mm_avg, y=foliar_phosphorus_conc)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x="Mean annual actual evapotranspiration (mm)", y="Foliar P concentration (%)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=250, label.y=0.33, size=4) +
+  stat_regline_equation(label.x=250, label.y=0.30, size=4) +
+  theme_katy_grid() +
+  theme(axis.title.x=element_blank())
+
+et_np <- ggplot(neon_site, aes(x=et_mm_avg, y=np_ratio_foliar)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x="Mean annual actual evapotranspiration (mm)", y="Foliar N:P ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=250, label.y=23, size=4) +
+  stat_regline_equation(label.x=250, label.y=21.5, size=4) +
+  theme_katy_grid() +
+  theme(axis.title.x=element_blank())
+
+et_cn <- ggplot(neon_site, aes(x=et_mm_avg, y=cn_ratio_foliar)) +
+  geom_point() +
+  labs(x="Mean annual actual evapotranspiration (mm)", y="Foliar C:N ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=250, label.y=49, size=4) +
+  theme_katy_grid() + 
+  theme(axis.title.x=element_blank())
+
+et_cp <- ggplot(neon_site, aes(x=et_mm_avg, y=cp_ratio_foliar)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x="", y="Foliar C:P ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=250, label.y=900, size=4) +
+  stat_regline_equation(label.x=250, label.y=825, size=4) +
+  theme_katy_grid()
+```
+
+## Combine latitude and AET regressions for full Fig. 1
+``` {r fig 1 - latitude and aet regressions grid}
+lat_col <- plot_grid(lat_n, lat_cn, lat_p, lat_cp, lat_np, nrow=5, 
+                      align = "v", labels=c("A", "B", "C", "D", "E"))
+lat_col_label <- ggdraw(lat_col) +
+  draw_label(expression(Latitude~(degree)), color="black", vjust=0, y=0)
+
+# make versions of et figs that have no y axis title (so they can be shared)
+et_n2 <- et_n + theme(axis.title.y=element_blank())
+et_p2 <- et_p + theme(axis.title.y=element_blank())
+et_cn2 <- et_cn + theme(axis.title.y=element_blank())
+et_np2 <- et_np + theme(axis.title.y=element_blank())
+et_cp2 <- et_cp + theme(axis.title.y=element_blank())
+
+et_col <- plot_grid(et_n2, et_cn2, et_p2, et_cp2, et_np2, nrow=5, 
+                     align="v", labels=c("F", "G", "H", "I", "J"))
+et_col_label <- ggdraw(et_col) +
+  draw_label(expression(AET~(mm~yr^-1)), color="black", vjust=0, y=0)
+
+fig1_lat_et_grid_vert <- plot_grid(lat_col_label, et_col_label, ncol=2)
+
+fig1_lat_et_grid_vert
+```
+
+## Figure 2 - Soil chemistry regressions
+
+``` {r fig 2 - soil chem regressions}
+foliarn_soilnmin <- ggplot(neon_site, aes(x=netnmin_ugpergperday, y=n_percent_foliar)) +
+  geom_point() +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=0.2, label.y=2.8, size=4) +
+  labs(x=expression("Soil N mineralization rate"~(mu*g~g^-1~day^-1)), 
+                    y="Foliar N concentration (%)") +
+  theme_katy_grid()
+
+foliarp_soilp <- ggplot(neon_site, aes(x=extractable_p_soil, y=foliar_phosphorus_conc)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x=expression("Soil extractable P"~(mg~P~kg^-1~soil)), 
+       y="Foliar P concentration (%)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=13, label.y=0.3, size=4) +
+  stat_regline_equation(label.x=13, label.y=.28, size=4) +
+  theme_katy_grid()
+
+foliarnp_soilnmin <- ggplot(neon_site, aes(x=netnmin_ugpergperday, y=np_ratio_foliar)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x=expression("Soil N mineralization rate"~(mu*g~g^-1~day^-1)), 
+       y="Foliar N:P ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=0.2, label.y=20, size=4) +
+  stat_regline_equation(label.x=0.2, label.y=18.75, size=4) +
+  theme_katy_grid()
+
+foliarnp_soilp <- ggplot(neon_site, aes(x=extractable_p_soil, y=np_ratio_foliar)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  labs(x=expression("Soil extractable P"~(mg~P~kg^-1~soil)), 
+       y="Foliar N:P ratio (mass)") +
+  stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
+           label.x=13, label.y=22, size=4) +
+  stat_regline_equation(label.x=13, label.y=20.5, size=4) +
+  theme_katy_grid()
+
+fig2_soil_foliar_grid <- plot_grid(foliarn_soilnmin, foliarp_soilp,
+                              foliarnp_soilnmin, foliarnp_soilp,
+                              labels=c("A", "B", "C", "D"), 
+                              align="hv", axis="bl")
+
+fig2_soil_foliar_grid
+```
+
+# Variable importance 
+
+## Nested random effects models to determine phylogeny vs site importance
+
+```{r nested random effects model for phylogeny vs site}
+n_part_lme <- lmer(n_percent_foliar ~ (1|family/genus/species) + (1|site_id), 
+                   data=foliar_all_site)
+n_part <- pct_var_neon(n_part_lme) # use function in "variance partitioning function" script to generate percent of variance for each random effect
+
+cn_part_lme <- lmer(cn_ratio_foliar ~ (1|family/genus/species) + (1|site_id), 
+                    data=foliar_all_site)
+
+cn_part <- pct_var_neon(cn_part_lme)
+
+p_part_lme <- lmer(foliar_phosphorus_conc ~ (1|family/genus/species) + (1|site_id), 
+                   data=foliar_all_site)
+p_part <- pct_var_neon(p_part_lme)
+  
+np_part_lme <- lmer(np_ratio_foliar ~ (1|family/genus/species) + (1|site_id), 
+                   data=foliar_all_site)
+np_part <- pct_var_neon(np_part_lme)
+
+cp_part_lme <- lmer(cp_ratio_foliar ~ (1|family/genus/species) + (1|site_id), 
+                    data=foliar_all_site)
+cp_part <- pct_var_neon(cp_part_lme)
+```
+
+## Table S2 - Variance partitioning percentages
+
+``` {r table s2 - variance partitioning for each foliar trait}
+all_var <- left_join (n_part, p_part,  by="group",
+                      suffix=c("_n", "_p")) %>%
+  left_join(np_part, by="group") %>%
+  left_join(cn_part, by="group", suffix=c("_np", "_cn")) %>%
+  left_join(cp_part, by="group") %>%
+  rename("pct_var_cp" = "pct_var") %>%
+  pivot_longer(pct_var_n:pct_var_cp,
+               names_to="foliar_trait",
+               values_to="pct_var")
+all_var$group <- factor(all_var$group, 
+                        levels=c("residual", "site", "species", "genus", "family"))
+all_var$foliar_trait <- factor(all_var$foliar_trait)
+all_var$foliar_trait <- factor(all_var$foliar_trait,
+                               levels=c("pct_var_n","pct_var_cn",
+                                        "pct_var_p","pct_var_cp",
+                                        "pct_var_np"))
+
+# Make a table showing percent of variance attributed to phylogeny vs. site
+var_part_table <- all_var %>%
+  group_by(foliar_trait) %>%
+  pivot_wider(names_from=group,
+              values_from=pct_var) %>%
+  mutate(phylogenetic = family + genus + species) %>%
+  select(foliar_trait, phylogenetic, site, residual) %>%
+  mutate(across(where(is.numeric), round, digits=2))
+
+flextable(var_part_table)
+```
+
+## Fig. 3 - Variance partitioning color figure
+
+``` {r fig 3 - variance partitioning}
+fig3_var_part <- ggplot(all_var, aes(fill=group, 
+                    y=pct_var, x=foliar_trait)) + 
+  geom_bar(position="stack", stat="identity")+
+  labs(x="Foliar chemistry", y="Percent of variance explained") +
+  scale_fill_brewer(name="", 
+                    breaks=rev(levels(all_var$group)),
+                    labels=c("Family", "Genus", "Species", 
+                             "Site", "Residual"),
+                    palette="Dark2") +
+  scale_x_discrete(limits=rev(levels(all_var$foliar_trait)),
+                   labels=c("N:P ratio", "C:P ratio", "P (%)", 
+                            "C:N ratio", "N (%)")) +
+  theme_katy() +
+  coord_flip()
+
+fig3_var_part
+```
+
+## Site variable importance calculations with VIP
+
+``` {r random forest and VIP}
+foliar_n_cforest <- cforest(n_percent_foliar ~ extractable_p_soil + 
+                               n_percent_soil + c_percent_soil +
+                               netnmin_ugpergperday +
+                              et_mm_avg + mat_deg_c + map_mm, data=foliar_all_site, ntree=10000)
+
+# Make a list of the soil variables
+soil_vars <- c("netnmin_ugpergperday", "extractable_p_soil", "c_percent_soil", "n_percent_soil")
+
+# Extract variable importance scores, then make a new column to divvy up variables by soil vs. climate
+vi_n <- vi(foliar_n_cforest)
+
+vi_n2 <- vi_n %>%
+  mutate(var_type = ifelse(Variable %in% soil_vars, "soil", "env"))
+
+n_cforest_vip <- vip(vi_n2, num_features=5, geom="col", 
+                      mapping = aes_string(fill="var_type")) +
+  labs(y="Model-specific variable importance", x="Variable") +
+  theme_katy_grid()
+
+# Repeat for P
+
+foliar_p_cforest <- cforest(foliar_phosphorus_conc ~ extractable_p_soil + 
+                               n_percent_soil + c_percent_soil +
+                               netnmin_ugpergperday +
+                               et_mm_avg + mat_deg_c + map_mm, 
+                             data=foliar_all_site, na.action=na.omit, ntree=10000)
+
+vi_p <- vi(foliar_p_cforest)
+vi_p2 <- vi_p %>%
+  mutate(var_type = ifelse(Variable %in% soil_vars, "soil", "env"))
+
+p_cforest_vip <- vip(vi_p2, num_features=5, geom="col", 
+                      mapping = aes_string(fill="var_type")) +
+  labs(y="Model-specific variable importance", x="Variable") +
+  theme_katy_grid()
+
+# Foliar N:P 
+
+foliar_np_cforest <- cforest(np_ratio_foliar ~ extractable_p_soil + 
+                               n_percent_soil + c_percent_soil +
+                               netnmin_ugpergperday +
+                               et_mm_avg + mat_deg_c + map_mm, 
+                             data=foliar_all_site, na.action=na.omit, ntree=10000)
+
+vi_np <- vi(foliar_np_cforest)
+vi_np2 <- vi_np %>%
+  mutate(var_type = ifelse(Variable %in% soil_vars, "soil", "env"))
+
+np_cforest_vip <- vip(vi_np2, num_features=5, geom="col", 
+                      mapping = aes_string(fill="var_type")) +
+  labs(y="Model-specific variable importance", x="Variable") +
+  theme_katy_grid()
+
+# Foliar C:N
+
+foliar_cn_cforest <- cforest(cn_ratio_foliar ~ extractable_p_soil + 
+                               n_percent_soil + c_percent_soil +
+                               netnmin_ugpergperday +
+                               et_mm_avg + mat_deg_c + map_mm, 
+                             data=foliar_all_site, na.action=na.omit, ntree=10000)
+
+vi_cn <- vi(foliar_cn_cforest)
+vi_cn2 <- vi_cn %>%
+  mutate(var_type = ifelse(Variable %in% soil_vars, "soil", "env"))
+
+cn_cforest_vip <- vip(vi_cn2, num_features=5, geom="col", 
+                      mapping = aes_string(fill="var_type")) +
+  labs(y="Model-specific variable importance", x="Variable") +
+  theme_katy_grid()
+
+# Foliar C:P
+
+foliar_cp_cforest <- cforest(cp_ratio_foliar ~ extractable_p_soil + 
+                               n_percent_soil + c_percent_soil +
+                               netnmin_ugpergperday +
+                               et_mm_avg + mat_deg_c + map_mm, 
+                             data=foliar_all_site, na.action=na.omit, ntree=10000)
+
+vi_cp <- vi(foliar_cp_cforest)
+vi_cp2 <- vi_cp %>%
+  mutate(var_type = ifelse(Variable %in% soil_vars, "soil", "env"))
+
+cp_cforest_vip <- vip(vi_cp2, num_features=5, geom="col", 
+                       mapping = aes_string(fill="var_type")) +
+  labs(y="Model-specific variable importance", x="Variable") +
+  theme_katy_grid()
+```
+
+## Figure 4 - variable importance
+
+``` {r fig 4 - variable importance}
+# color the bars by soil vs. climate using #8C510A for the brown and #01665E for the green
+vip_fill <- c("soil" = "#8C510A", "env" = "#01665E")
+
+n_vip_lab <- c("Soil extractable P", "AET", "MAP", "MAT", "Soil N mineralization rate")
+n_vip_plot_leg <- n_cforest_vip + 
+  ggtitle("Foliar N concentration") +
+  scale_x_discrete(labels= n_vip_lab) +
+  labs(y="Variable importance", x="") +
+  scale_fill_manual(name="Variable type", labels=c("Climate", "Soil"), values = vip_fill)
+n_vip_plot <- n_vip_plot_leg + theme(legend.position="none")
+
+p_vip_lab <- c("Soil N concentration", "Soil C concentration", "MAP", "AET", "Soil extractable P")
+p_vip_plot <- p_cforest_vip + 
+  scale_x_discrete(labels= p_vip_lab) +
+  ggtitle("Foliar P concentration") +
+  labs(y="Variable importance", x="") +
+  scale_fill_manual(values = vip_fill)+
+  theme(legend.position="none")
+
+np_vip_lab <- c("Soil N mineralization rate", "MAP", "MAT", "Soil extractable P", "AET")
+np_vip_plot <- np_cforest_vip + 
+  ggtitle("Foliar N:P ratio") +
+  scale_x_discrete(labels= np_vip_lab) +
+  labs(y="Variable importance", x="") +
+  scale_fill_manual(values = vip_fill)+
+  theme(legend.position="none")
+
+cn_vip_lab <- c("MAT", "Soil N concentration", "Soil C concentration", "AET", "Soil N mineralization rate")
+cn_vip_plot <- cn_cforest_vip + 
+  ggtitle("Foliar C:N ratio") +
+  labs(y="Variable importance", x="") +
+  scale_x_discrete(labels= cn_vip_lab) +
+  scale_fill_manual(values = vip_fill)+
+  theme(legend.position="none")
+
+cp_vip_lab <- c("MAT", "Soil N concentration", "Soil extractable P", "AET", "MAP")
+cp_vip_plot <- cp_cforest_vip + 
+  ggtitle("Foliar C:P ratio") +
+  labs(y="Variable importance", x="") +
+  scale_x_discrete(labels= cp_vip_lab) +
+  scale_fill_manual(values = vip_fill)+
+  theme(legend.position="none")
+
+vip_legend <- get_legend(n_vip_plot_leg)
+
+# Put together in a grid, make sure to align
+fig4_vip_grid <- plot_grid(n_vip_plot, cn_vip_plot, p_vip_plot, 
+                      cp_vip_plot, np_vip_plot,  vip_legend,
+                      labels=c("A", "B", "C", "D", "E", ""), nrow=3,
+                      align="v", axis="l")
+
+fig4_vip_grid
+```
+
+# Intraspecific flexibility
+
+## Subset foliar chem data by species and calculate significant differences in foliar N within a species among sites
+
+``` {r subset by species and generate significance letters for N among sites}
+
+# ACRU
+acru <- common_foliar_site %>% 
+  filter(taxon_id=="ACRU")
+anova(aov(n_percent_foliar ~ site_id, acru))
+acru_n_letters <- hsd_letters(acru$site_id, acru$n_percent_foliar) #hsd_letters() function comes from one of my custom scripts, will make an ANOVA and then calculate sig differences
+  
+# LIST2
+list2 <- common_foliar_site %>% 
+  filter(taxon_id=="LIST2")
+anova(aov(n_percent_foliar ~ site_id, list2))
+list2_n_letters <- hsd_letters(list2$site_id, list2$n_percent_foliar)
+
+# LITU
+litu <- common_foliar_site %>% 
+  filter(taxon_id=="LITU")
+litu_n_letters <- hsd_letters(litu$site_id, litu$n_percent_foliar)
+
+# QUAL
+qual <- common_foliar_site %>% 
+  filter(taxon_id=="QUAL")
+qual_n_letters <- hsd_letters(qual$site_id, qual$n_percent_foliar)
+
+# QURU
+quru <- common_foliar_site %>% 
+  filter(taxon_id=="QURU")
+quru_n_letters <- hsd_letters(quru$site_id, quru$n_percent_foliar)
+```
+
+## Table S1 - ANOVA table for effect of site on intraspecific foliar chemistry
+
+``` {r table s1 - anova table for effect of site on foliar chem}
+trait_names <- c("Foliar N", "Foliar P", "Foliar N:P", "Foliar C:N", "Foliar C:P")
+# make anova table for site fx for each trait and each species
+acru_n_site_lm <- glance(lm(n_percent_foliar~site_id, data=acru))
+acru_p_site_lm <- glance(lm(foliar_phosphorus_conc~site_id, data=acru))
+acru_cn_site_lm <- glance(lm(cn_ratio_foliar~site_id, data=acru))
+acru_np_site_lm <- glance(lm(np_ratio_foliar~site_id, data=acru))
+acru_cp_site_lm <- glance(lm(cp_ratio_foliar~site_id, data=acru))
+
+acru_site_table <- bind_rows(acru_n_site_lm, acru_p_site_lm, acru_np_site_lm, 
+                             acru_cn_site_lm, acru_cp_site_lm) %>%
+  mutate(species = "Acer rubrum") %>%
+  mutate(traits = trait_names) %>%
+  relocate(traits, .before=r.squared) %>%
+  relocate(species, .after=traits) %>%
+  select(species, traits, statistic, p.value, df, df.residual)
+
+list2_n_site_lm <- glance(lm(n_percent_foliar~site_id, data=list2))
+list2_p_site_lm <- glance(lm(foliar_phosphorus_conc~site_id, data=list2))
+list2_cn_site_lm <- glance(lm(cn_ratio_foliar~site_id, data=list2))
+list2_np_site_lm <- glance(lm(np_ratio_foliar~site_id, data=list2))
+list2_cp_site_lm <- glance(lm(cp_ratio_foliar~site_id, data=list2))
+
+list2_site_table <- bind_rows(list2_n_site_lm, list2_p_site_lm, list2_np_site_lm,
+                              list2_cn_site_lm, list2_cp_site_lm) %>%
+  mutate(species = "Liquidambar styraciflua") %>%
+  mutate(traits = trait_names) %>%
+  relocate(traits, .before=r.squared) %>%
+  relocate(species, .after=traits) %>%
+  select(species, traits, statistic, p.value, df, df.residual)
+
+litu_n_site_lm <- glance(lm(n_percent_foliar~site_id, data=litu))
+litu_p_site_lm <- glance(lm(foliar_phosphorus_conc~site_id, data=litu))
+litu_cn_site_lm <- glance(lm(cn_ratio_foliar~site_id, data=litu))
+litu_np_site_lm <- glance(lm(np_ratio_foliar~site_id, data=litu))
+litu_cp_site_lm <- glance(lm(cp_ratio_foliar~site_id, data=litu))
+
+litu_site_table <- bind_rows(litu_n_site_lm, litu_p_site_lm, litu_np_site_lm, 
+                             litu_cn_site_lm, litu_cp_site_lm) %>%
+  mutate(species = "Liriodendron tulipifera") %>%
+  mutate(traits = trait_names) %>%
+  relocate(traits, .before=r.squared) %>%
+  relocate(species, .after=traits) %>%
+  select(species, traits, statistic, p.value, df, df.residual)
+
+qual_n_site_lm <- glance(lm(n_percent_foliar~site_id, data=qual))
+qual_p_site_lm <- glance(lm(foliar_phosphorus_conc~site_id, data=qual))
+qual_cn_site_lm <- glance(lm(cn_ratio_foliar~site_id, data=qual))
+qual_np_site_lm <- glance(lm(np_ratio_foliar~site_id, data=qual))
+qual_cp_site_lm <- glance(lm(cp_ratio_foliar~site_id, data=qual))
+
+qual_site_table <- bind_rows(qual_n_site_lm, qual_p_site_lm, qual_np_site_lm, 
+                             qual_cn_site_lm, qual_cp_site_lm) %>%
+  mutate(species = "Quercus alba") %>%
+  mutate(traits = trait_names) %>%
+  relocate(traits, .before=r.squared) %>%
+  relocate(species, .after=traits) %>%
+  select(species, traits, statistic, p.value, df, df.residual)
+
+quru_n_site_lm <- glance(lm(n_percent_foliar~site_id, data=quru))
+quru_p_site_lm <- glance(lm(foliar_phosphorus_conc~site_id, data=quru))
+quru_cn_site_lm <- glance(lm(cn_ratio_foliar~site_id, data=quru))
+quru_np_site_lm <- glance(lm(np_ratio_foliar~site_id, data=quru))
+quru_cp_site_lm <- glance(lm(cp_ratio_foliar~site_id, data=quru))
+
+quru_site_table <- bind_rows(quru_n_site_lm, quru_p_site_lm, quru_np_site_lm, 
+                             quru_cn_site_lm, quru_cp_site_lm) %>%
+  mutate(species = "Quercus rubra") %>%
+  mutate(traits = trait_names) %>%
+  relocate(traits, .before=r.squared) %>%
+  relocate(species, .after=traits) %>%
+  select(species, traits, statistic, p.value, df, df.residual)
+
+species_site_table <- bind_rows(acru_site_table, list2_site_table, litu_site_table, qual_site_table, quru_site_table) %>%
+  mutate(across(statistic, round, digits=2)) %>%
+  mutate(across(p.value, round, digits=3))
+
+flextable(species_site_table)
+```
+
+## Figure 5 - intraspecific flexibility in foliar N among sites
+
+``` {r fig 6 - intraspecific flexibility in foliar N among sites}
+acru_n <- ggplot(acru, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
+  geom_boxplot() +
+  geom_text(data=acru_n_letters, aes(x=x, y=3, label=letters), 
+            position=position_dodge(width=0.9)) +
+  labs(x="Site", y="Foliar N (%)") +
+  ggtitle("Acer rubrum") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+list2_n <- ggplot(list2, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
+  geom_boxplot() +
+  geom_text(data=list2_n_letters, aes(x=x, y=3, label=letters), 
+            position=position_dodge(width=0.9)) +
+  labs(x="Site", y="Foliar N (%)") +
+  ggtitle("Liquidambar styraciflua") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+litu_n <- ggplot(litu, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
+  geom_boxplot() +
+  geom_text(data=litu_n_letters, aes(x=x, y=3, label=letters), 
+            position=position_dodge(width=0.9)) +
+  labs(x="Site", y="Foliar N (%)") +
+  ggtitle("Lirodendron tulipifera") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+qual_n <- ggplot(qual, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
+  geom_boxplot() +
+  geom_text(data=qual_n_letters, aes(x=x, y=3, label=letters), 
+            position=position_dodge(width=0.9)) +
+  labs(x="Site", y="Foliar N (%)") +
+  ggtitle("Quercus alba") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+quru_n <- ggplot(quru, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
+  geom_boxplot() +
+  geom_text(data=quru_n_letters, aes(x=x, y=3, label=letters), 
+            position=position_dodge(width=0.9)) +
+  labs(x="Site", y="Foliar N (%)") +
+  ggtitle("Quercus rubra") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+arrow <- readPNG(here("manuscript", "prelim_figs", "arrow.png")) # need to load magick package
+
+common_n_grid <- plot_grid(acru_n, list2_n, litu_n, qual_n, quru_n,
+                           labels=c("A", "B", "C", "D", "E"), nrow=2, align="hv", axis="bl")
+
+n_grid_space <- plot_grid(common_n_grid, NULL,
+                          nrow=2, rel_heights=c(1,0.2))
+fig5_n_grid_arrow <- ggdraw(n_grid_space) +
+  draw_image(arrow, x=0.03, y=0.075, valign=0, height=0.1)
+
+fig5_n_grid_arrow
+```
+
+## Environmental correlates of intraspecific foliar N
+
+``` {r environmental correlates of intraspecific foliar N}
+# ACRU
+ind_vars_list <- c("Site", "Latitude", "MAT", "MAP", "AET", "Soil C", "Soil N", "Soil N mineralization rate", "Soil extractable P")
+
+acru_lm1.1 <- glance(lm(n_percent_foliar ~ site_id, data=acru))
+acru_lm1.2 <- glance(lm(n_percent_foliar ~ latitude, data=acru))
+acru_lm1.3 <- glance(lm(n_percent_foliar ~ mat_deg_c, data=acru))
+acru_lm1.4 <- glance(lm(n_percent_foliar ~ map_mm, data=acru))
+acru_lm1.5 <- glance(lm(n_percent_foliar ~ et_mm_avg, data=acru))
+acru_lm1.6 <- glance(lm(n_percent_foliar ~ c_percent_soil, data=acru))
+acru_lm1.7 <- glance(lm(n_percent_foliar ~ n_percent_soil, data=acru))
+acru_lm1.8 <- glance(lm(n_percent_foliar ~ netnmin_ugpergperday, data=acru))
+acru_lm1.9 <- glance(lm(n_percent_foliar ~ extractable_p_soil, data=acru))
+acru_table <- bind_rows(acru_lm1.1, acru_lm1.2, acru_lm1.3, acru_lm1.4, acru_lm1.5, 
+                        acru_lm1.6, acru_lm1.7, acru_lm1.8, acru_lm1.9) %>%
+  mutate(ind_var = ind_vars_list) %>%
+  mutate(species = "Acer rubrum") %>%
+  relocate(ind_var, .before=r.squared) %>%
+  relocate(species, .after=ind_var) %>%
+  select(species, ind_var, r.squared, statistic, p.value, df, df.residual)
+
+# LIST2
+list2_lm1.1 <- glance(lm(n_percent_foliar ~ site_id, data=list2))
+list2_lm1.2 <- glance(lm(n_percent_foliar ~ latitude, data=list2))
+list2_lm1.3 <- glance(lm(n_percent_foliar ~ mat_deg_c, data=list2))
+list2_lm1.4 <- glance(lm(n_percent_foliar ~ map_mm, data=list2))
+list2_lm1.5 <- glance(lm(n_percent_foliar ~ et_mm_avg, data=list2))
+list2_lm1.6 <- glance(lm(n_percent_foliar ~ c_percent_soil, data=list2))
+list2_lm1.7 <- glance(lm(n_percent_foliar ~ n_percent_soil, data=list2))
+list2_lm1.8 <- glance(lm(n_percent_foliar ~ netnmin_ugpergperday, data=list2))
+list2_lm1.9 <- glance(lm(n_percent_foliar ~ extractable_p_soil, data=list2))
+list2_table <- bind_rows(list2_lm1.1, list2_lm1.2, list2_lm1.3, list2_lm1.4, list2_lm1.5, 
+                        list2_lm1.6, list2_lm1.7, list2_lm1.8, list2_lm1.9) %>%
+  mutate(ind_var = ind_vars_list) %>%
+  mutate(species = "Liquidambar styraciflua") %>%
+  relocate(ind_var, .before=r.squared) %>%
+  relocate(species, .after=ind_var) %>%
+  select(species, ind_var, r.squared, statistic, p.value, df, df.residual)
+
+# LITU
+litu_lm1.1 <- glance(lm(n_percent_foliar ~ site_id, data=litu))
+litu_lm1.2 <- glance(lm(n_percent_foliar ~ latitude, data=litu))
+litu_lm1.3 <- glance(lm(n_percent_foliar ~ mat_deg_c, data=litu))
+litu_lm1.4 <- glance(lm(n_percent_foliar ~ map_mm, data=litu))
+litu_lm1.5 <- glance(lm(n_percent_foliar ~ et_mm_avg, data=litu))
+litu_lm1.6 <- glance(lm(n_percent_foliar ~ c_percent_soil, data=litu))
+litu_lm1.7 <- glance(lm(n_percent_foliar ~ n_percent_soil, data=litu))
+litu_lm1.8 <- glance(lm(n_percent_foliar ~ netnmin_ugpergperday, data=litu))
+litu_lm1.9 <- glance(lm(n_percent_foliar ~ extractable_p_soil, data=litu))
+litu_table <- bind_rows(litu_lm1.1, litu_lm1.2, litu_lm1.3, litu_lm1.4, litu_lm1.5, 
+                         litu_lm1.6, litu_lm1.7, litu_lm1.8, litu_lm1.9) %>%
+  mutate(ind_var = ind_vars_list) %>%
+  mutate(species = "Liriodendron tulipifera") %>%
+  relocate(ind_var, .before=r.squared) %>%
+  relocate(species, .after=ind_var) %>%
+  select(species, ind_var, r.squared, statistic, p.value, df, df.residual)
+
+# QUAL
+qual_lm1.1 <- glance(lm(n_percent_foliar ~ site_id, data=qual))
+qual_lm1.2 <- glance(lm(n_percent_foliar ~ latitude, data=qual))
+qual_lm1.3 <- glance(lm(n_percent_foliar ~ mat_deg_c, data=qual))
+qual_lm1.4 <- glance(lm(n_percent_foliar ~ map_mm, data=qual))
+qual_lm1.5 <- glance(lm(n_percent_foliar ~ et_mm_avg, data=qual))
+qual_lm1.6 <- glance(lm(n_percent_foliar ~ c_percent_soil, data=qual))
+qual_lm1.7 <- glance(lm(n_percent_foliar ~ n_percent_soil, data=qual))
+qual_lm1.8 <- glance(lm(n_percent_foliar ~ netnmin_ugpergperday, data=qual))
+qual_lm1.9 <- glance(lm(n_percent_foliar ~ extractable_p_soil, data=qual))
+qual_table <- bind_rows(qual_lm1.1, qual_lm1.2, qual_lm1.3, qual_lm1.4, qual_lm1.5, 
+                         qual_lm1.6, qual_lm1.7, qual_lm1.8, qual_lm1.9) %>%
+  mutate(ind_var = ind_vars_list) %>%
+  mutate(species = "Quercus alba") %>%
+  relocate(ind_var, .before=r.squared) %>%
+  relocate(species, .after=ind_var) %>%
+  select(species, ind_var, r.squared, statistic, p.value, df, df.residual)
+
+# QURU
+quru_lm1.1 <- glance(lm(n_percent_foliar ~ site_id, data=quru))
+quru_lm1.2 <- glance(lm(n_percent_foliar ~ latitude, data=quru))
+quru_lm1.3 <- glance(lm(n_percent_foliar ~ mat_deg_c, data=quru))
+quru_lm1.4 <- glance(lm(n_percent_foliar ~ map_mm, data=quru))
+quru_lm1.5 <- glance(lm(n_percent_foliar ~ et_mm_avg, data=quru))
+quru_lm1.6 <- glance(lm(n_percent_foliar ~ c_percent_soil, data=quru))
+quru_lm1.7 <- glance(lm(n_percent_foliar ~ n_percent_soil, data=quru))
+quru_lm1.8 <- glance(lm(n_percent_foliar ~ netnmin_ugpergperday, data=quru))
+quru_lm1.9 <- glance(lm(n_percent_foliar ~ extractable_p_soil, data=quru))
+quru_table <- bind_rows(quru_lm1.1, quru_lm1.2, quru_lm1.3, quru_lm1.4, quru_lm1.5, 
+                         quru_lm1.6, quru_lm1.7, quru_lm1.8, quru_lm1.9) %>%
+  mutate(ind_var = ind_vars_list) %>%
+  mutate(species = "Quercus rubra") %>%
+  relocate(ind_var, .before=r.squared) %>%
+  relocate(species, .after=ind_var) %>%
+  select(species, ind_var, r.squared, statistic, p.value, df, df.residual)
+
+# Bind them all together into one big table (I'll probably separate these by species in the actual manuscript)
+species_flex_env_stats <- bind_rows(acru_table, list2_table, litu_table, 
+                                    qual_table, quru_table) %>%
+  mutate(across(r.squared:statistic, round, digits=2)) %>%
+  mutate(across(p.value, round, digits=3)) 
+
+flextable(species_flex_env_stats)
+```
+
+## Figure S2 - intraspecific flexibility in foliar P
+
+``` {r fig s2 - intraspecific flexibility in foliar P}
+acru_p_letters <- hsd_letters(acru$site_id, acru$foliar_phosphorus_conc)
+list2_p_letters <- hsd_letters(list2$site_id, list2$foliar_phosphorus_conc)
+litu_p_letters <- hsd_letters(litu$site_id, litu$foliar_phosphorus_conc)
+qual_p_letters <- hsd_letters(qual$site_id, qual$foliar_phosphorus_conc)
+quru_p_letters <- hsd_letters(quru$site_id, quru$foliar_phosphorus_conc)
+
+acru_p <- ggplot(acru, aes(x=fct_reorder(site_id, et_mm_avg), y=foliar_phosphorus_conc)) +
+  geom_boxplot() +
+  labs(x="Site", y="Foliar P (%)") +
+  ggtitle("Acer rubrum") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+list2_p <- ggplot(list2, aes(x=fct_reorder(site_id, et_mm_avg), y=foliar_phosphorus_conc)) +
+  geom_boxplot() +
+  labs(x="Site", y="Foliar P (%)") +
+  ggtitle("Liquidambar styraciflua") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+litu_p <- ggplot(litu, aes(x=fct_reorder(site_id, et_mm_avg), y=foliar_phosphorus_conc)) +
+  geom_boxplot() +
+  labs(x="Site", y="Foliar P (%)") +
+  ggtitle("Liriodendron tulipifera") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+qual_p <- ggplot(qual, aes(x=fct_reorder(site_id, et_mm_avg), y=foliar_phosphorus_conc)) +
+  geom_boxplot() +
+  labs(x="Site", y="Foliar P (%)") +
+  ggtitle("Quercus alba") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+quru_p <- ggplot(quru, aes(x=fct_reorder(site_id, et_mm_avg), y=foliar_phosphorus_conc)) +
+  geom_boxplot() +
+  labs(x="Site", y="Foliar P (%)") +
+  ggtitle("Quercus rubra") +
+  theme_katy_grid() +
+  theme(axis.text.x = element_text(angle = 45, hjust=1),
+        plot.title=element_text(face="italic"))
+
+figs2_common_p_grid <- plot_grid(acru_p, list2_p, litu_p, qual_p, quru_p,
+                           labels=c("A", "B", "C", "D", "E"), nrow=2, align="hv", axis="bl")
+
+figs2_common_p_grid
+```

@@ -1,0 +1,524 @@
+---
+title: "NEON Data Cleanup + Wrangling"
+author: Katherine A. Dynarski, Fiona M. Soper, Sasha C. Reed, William R. Wieder, Cory
+  C. Cleveland
+date: "8/18/2021"
+output: github_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r housekeeping}
+library(neonUtilities)
+library(tidyverse)
+library(here)
+library(janitor)
+
+# Script for N transformation calculations
+source(here("code", "n.def.calc.trans.R"))
+
+# Useful lists for dplyr 
+min_max <- list(
+  min = ~min(.x, na.rm=TRUE), 
+  max = ~max(.x, na.rm=TRUE)
+)
+
+mean_sd <- list(
+  mean = ~mean(.x, na.rm = TRUE), 
+  sd = ~sd(.x, na.rm = TRUE)
+)
+```
+
+# Download data 
+
+## Data from NEON archive
+
+Note - once you have done this once, don't need to run this chunk again. It will take a long time!
+
+```{r download neon data}
+# Foliar traits (all sites, all instances) 
+zipsByProduct(dpID="DP1.10026.001", package="basic", check.size=T)
+stackByTable(filepath="filesToStack10026")
+# stackByTable() will unzip file and give usable dataframes
+
+# Litter mass and chemistry (all sites, all instances)
+zipsByProduct(dpID="DP1.10033.001", package="basic", check.size=T)
+stackByTable(filepath=here("raw_data", "filesToStack10033"))
+
+# Root mass and chemistry (all sites, all instances)
+zipsByProduct(dpID="DP1.10067.001", package="basic", check.size=T)
+stackByTable(filepath="filesToStack10067")
+
+# Periodic soil sampling data (all sites, all instances)
+zipsByProduct(dpID="DP1.10086.001", package="basic", check.size=T)
+stackByTable(filepath="filesToStack10086")
+
+# Initial soil characterization (all sites)
+zipsByProduct(dpID="DP1.10047.001", package="basic", check.size=T)
+stackByTable(filepath="filesToStack10047")
+
+# Plant cover (all sites)
+zipsByProduct(dpID="DP1.10058.001", package="basic", check.size=T)
+stackByTable(filepath=here("raw_data", "filesToStack10058"))
+```
+
+## Climate data for NEON sites
+
+```{r climate data}
+neon_sites <- read.csv(here("raw_data", "field-sites.csv"))
+
+# Filter so that we only have terrestrial (not aquatic) sites
+neon_terr <- (neon_sites %>%
+                filter(grepl("Terrestrial", Site.Type)))
+
+# Remove extra characters from the MAT/MAP columns so we can analyze temp and precip as numeric
+neon_terr_clim <- (neon_terr %>%
+                     select(Site.Name, Site.ID, Latitude, Longitude, Site.Type,
+                            Mean.Annual.Temperature, Mean.Annual.Precipitation, Elevation, 
+                            Dominant.NLCD.Classes) %>%
+                     separate(Mean.Annual.Temperature, into=c("MAT_degC", "MAT_degF"), sep="/") %>%
+                     mutate(MAP_mm = 
+                              str_remove(Mean.Annual.Precipitation, " mm")) %>%
+                     mutate(elev_m = 
+                              str_remove(Elevation, " m")) %>%
+                     mutate(MAT_degC = str_remove(MAT_degC, "C")) %>%
+                     mutate(MAT_degF = str_remove(MAT_degF, "F")) %>%
+                     select(Site.Name, Site.ID, Latitude, Longitude, Site.Type,
+                            MAT_degC, MAT_degF, MAP_mm, elev_m, 
+                            Dominant.NLCD.Classes) %>%
+                     rename(siteID = Site.ID))
+
+# Force temperature, precip, and elevation to be numeric (they are character originally)
+neon_terr_clim$MAT_degC <- as.numeric(neon_terr_clim$MAT_degC)
+neon_terr_clim$MAT_degF <- as.numeric(neon_terr_clim$MAT_degF)
+neon_terr_clim$MAP_mm <- as.numeric(neon_terr_clim$MAP_mm)
+neon_terr_clim$elev_m <- as.numeric(neon_terr_clim$elev_m)
+```
+
+## Downloading AET and NPP data from MODIS
+
+The easiest way to get MODIS data right now is to request it from EarthData using the APPEARS tool. You can upload a CSV file with the lats and lnogs of sites you need data for, and request whatever bands you want. I requested AET and NPP data for all of the NEON site (in data/earthdata folder) over the past 15 years in order to calculate 15-year average AET and NPP. AET is MOD16 product and NPP is MOD17 product.
+
+```{r modis}
+mod16 <- read.csv(here("raw_data", "dynarski-neon-modis", 
+                       "Dynarski-NEON-MODIS-MOD16A3GF-006-results.csv"))
+mod17 <- read.csv(here("raw_data", "dynarski-neon-modis", 
+                       "Dynarski-NEON-MODIS-MOD17A3HGF-006-results.csv"))
+
+# AET data have already been converted into mm units
+# AET values > 6000 indicate cells that are urban/permenant wetland/otherwise non-calculable
+# Convert those NA before calculating 15 year average
+mod16_avg <- mod16 %>%
+  rename(siteID = ID,
+         ET_mm = MOD16A3GF_006_ET_500m)  %>%
+  mutate(ET_mm = ifelse(ET_mm < 6000, ET_mm, NA)) %>%
+  group_by(siteID) %>%
+  summarize(ET_mm_avg = mean(ET_mm)) %>%
+  mutate(ET_mm_avg = round(ET_mm_avg, digits=1))
+
+# Let's look at the MOD17 NPP product
+# Units are in kg C m2 yr-1
+# Values >30000 similarly indicate urban/permanent wetland/etc - convert to NA before calculating 15-year average
+mod17_avg <- mod17 %>%
+  rename(siteID = ID,
+         NPP_kgC = MOD17A3HGF_006_Npp_500m)  %>%
+  mutate(NPP_kgC = ifelse(NPP_kgC < 30000, NPP_kgC, NA)) %>%
+  group_by(siteID) %>%
+  summarize(NPP_kgC_avg = mean(NPP_kgC)) %>%
+  mutate(NPP_kgC_avg = round(NPP_kgC_avg, digits=1))
+```
+
+# Soil data
+
+## Soil periodic sampling data 
+
+Bulk soil C concentration, N concentration, and inorganic N data (ammonium [NH4+] concentrations, nitrate [NO3-] concentrations, and N mineralization rates) from soil samples 0-30 cm depth were accessed from the Soil physical and chemical properties, periodic data product (DP1.10086.001). Periodic soil collection data represent three sets of soil cores per plot, with up to 10 plots sampled per site, with one to two sampling bouts conducted per site between 2014-2019. 
+
+### Soil C and N concentrations
+
+``` {r soil cn}
+# Total C and N are in the soil chemistry dataframe
+
+soil_chem <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10086", "stackedFiles", "sls_soilChemistry.csv"), 
+  varFile=here("raw_data", "filesToStack10086", "stackedFiles", "variables_10086.csv"))
+
+# Need to average analytical reps, also demarcate (and separate?) organic vs mineral horizons
+soil_cores <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10086", "stackedFiles", "sls_soilCoreCollection.csv"), 
+  varFile=here("raw_data", "filesToStack10086", "stackedFiles", "variables_10086.csv"))
+
+mineral_organic <- (soil_cores %>%
+                      select(sampleID, horizon))
+
+soil_chem_horizons <- left_join(soil_chem, mineral_organic, by="sampleID")
+
+# Calculate the mean for any analytical reps, and pivot wider to make organic and mineral data into cols
+soil_chem_mean <- (soil_chem_horizons %>%
+                     group_by(domainID, siteID, plotID, sampleID, horizon) %>%
+                     summarize(across(d15N:organicCPercent, mean, na.rm=TRUE)) %>%
+                     mutate(CNratio = organicCPercent / nitrogenPercent))
+
+# Average values for each plot - calculate both separate and composite mineral and organic
+soil_chem_plot1 <- (soil_chem_mean %>%
+                      pivot_wider(names_from="horizon", values_from=d15N:CNratio) %>%
+                      group_by(siteID, plotID) %>%
+                      summarize(across(d15N_M:CNratio_O, mean, na.rm=TRUE)))
+
+soil_chem_plot2 <- (soil_chem_mean %>%
+                      group_by(siteID, plotID) %>%
+                      summarize(across(d15N:CNratio, mean, na.rm=TRUE)))
+soil_chem_plot <- left_join(soil_chem_plot2, soil_chem_plot1, by=c("siteID", "plotID"))
+```
+
+### Soil inorganic N and N transformations
+
+```{r soil inorganic N from periodic sampling}
+# Calculating N transformations requires a few different tables from the periodic sampling stack, as well as a function that you can download from NEON to calculate N transformations (mineralization). 
+# https://github.com/NEONScience/NEON-Nitrogen-Transformations
+
+# Step 1 - stack necessary data frames
+kcl_int <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10086", "stackedFiles", "ntr_internalLab.csv"), 
+  varFile=here("raw_data", "filesToStack10086", "stackedFiles", "variables_10086.csv"))
+
+kcl_int_blank <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10086", "stackedFiles", "ntr_internalLabBlanks.csv"), 
+  varFile=here("raw_data", "filesToStack10086", "stackedFiles", "variables_10086.csv"))
+
+kcl_ext <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10086", "stackedFiles", "ntr_externalLab.csv"), 
+  varFile=here("raw_data", "filesToStack10086", "stackedFiles", "variables_10086.csv"))
+
+soil_moisture <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10086", "stackedFiles", "sls_soilMoisture.csv"), 
+  varFile=here("raw_data", "filesToStack10086", "stackedFiles", "variables_10086.csv"))
+
+# Step 2 - run "def.calc.ntrans() function (defined in the def.calc.ntrans.R file downlaoded from NEON GitHub - a function to calculate mineral N concentrations and mineralization rates) 
+soil_ntrans <- def.calc.ntrans(kcl_int, kcl_int_blank, kcl_ext, soil_moisture)
+
+# Add back in which horizon is which
+soil_ntrans_horizons <- left_join(soil_ntrans, mineral_organic, by="sampleID")
+
+# Output is a table of N concentrations/rates for each sample at each plot at each site
+
+# Step 3 - calculate averages per plot
+soil_ntrans_plot1 <- (soil_ntrans_horizons %>%
+                        mutate(plotID2 = plotID) %>%
+                        separate(plotID2, into= c("siteID", "plotID3"), sep="_") %>%
+                        select(-plotID3) %>%
+                        relocate(siteID, .before=plotID) %>%
+                        group_by(siteID, plotID, nTransBoutType) %>%
+                        summarise(across(soilAmmoniumNugPerGram:netNitugPerGramPerDay, 
+                                         mean, na.rm=TRUE)) %>%
+                        pivot_wider(names_from=nTransBoutType,
+                                    values_from=soilAmmoniumNugPerGram:netNitugPerGramPerDay) %>%
+                        select(-c(soilAmmoniumNugPerGram_tFinal, soilNitrateNitriteNugPerGram_tFinal,
+                                  netNminugPerGramPerDay_tInitial, netNitugPerGramPerDay_tInitial)) %>%
+                        rename(soilnh4_conc = soilAmmoniumNugPerGram_tInitial,
+                               soilno3_conc = soilNitrateNitriteNugPerGram_tInitial,
+                               netnmin_ugpergperday = netNminugPerGramPerDay_tFinal,
+                               nitrif_ugpergperday = netNitugPerGramPerDay_tFinal))
+
+soil_ntrans_plot2 <- (soil_ntrans_horizons %>%
+                        mutate(plotID2 = plotID) %>%
+                        separate(plotID2, into= c("siteID", "plotID3"), sep="_") %>%
+                        select(-plotID3) %>%
+                        relocate(siteID, .before=plotID) %>%
+                        group_by(siteID, plotID, horizon, nTransBoutType) %>%
+                        summarise(across(soilAmmoniumNugPerGram:netNitugPerGramPerDay, 
+                                         mean, na.rm=TRUE)) %>%
+                        pivot_wider(names_from=nTransBoutType,
+                                    values_from=soilAmmoniumNugPerGram:netNitugPerGramPerDay) %>%
+                        select(-c(soilAmmoniumNugPerGram_tFinal, soilNitrateNitriteNugPerGram_tFinal,
+                                  netNminugPerGramPerDay_tInitial, netNitugPerGramPerDay_tInitial)) %>%
+                        rename(soilnh4_conc = soilAmmoniumNugPerGram_tInitial,
+                               soilno3_conc = soilNitrateNitriteNugPerGram_tInitial,
+                               netnmin_ugpergperday = netNminugPerGramPerDay_tFinal,
+                               nitrif_ugpergperday = netNitugPerGramPerDay_tFinal) %>%
+                        pivot_wider(names_from=horizon, 
+                                    values_from=soilnh4_conc:nitrif_ugpergperday))
+
+soil_ntrans_plot <- left_join(soil_ntrans_plot1, soil_ntrans_plot2, by=c("siteID", "plotID"))
+# Step 4- Add to dataframe with other soil chemistry from periodic sampling
+
+soil_chem_ntrans_plot <- left_join(soil_chem_plot, soil_ntrans_plot,
+                                   by=c("siteID", "plotID"))
+
+# Step 5 - calculate site average
+soil_chem_ntrans_site <- (soil_chem_ntrans_plot %>%
+                            group_by(siteID) %>%
+                            summarize(across(where(is.numeric), mean, na.rm=TRUE)))
+```
+
+## Soil initial sampling
+
+Soil extractable P data are not collected during periodic sampling bouts, so P data were instead accessed from the Soil physical and chemical properties, distributed initial characterization data product (DP1.10047.001). Soil initial characterization data represent one soil pit per plot, with 10-34 plots sampled per site. 
+
+``` {r soil extractable p}
+soil_initchem <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10047", "stackedFiles", "spc_biogeochem.csv"), 
+  varFile=here("raw_data", "filesToStack10047", "stackedFiles", "variables_10047.csv"))
+
+# There are literally 125 columns in this table so extract just the columns I want
+soil_initcnp <- (soil_initchem %>%
+                   filter(biogeoBottomDepth <= 30) %>% # only take the samples above 30 cm to be comparable with periodic soil sampling (where N transformations come from), which goes to a max depth of 30 cm
+                   # make it so there is only one 
+                   mutate(extractableP = ifelse(!is.na(MehlichIIITotP), MehlichIIITotP,
+                                                ifelse(!is.na(Bray1PExtractable), Bray1PExtractable,
+                                                       OlsenPExtractable))) %>%
+                   mutate(pExtraction =ifelse(!is.na(MehlichIIITotP), "MehlichIII",
+                                              ifelse(!is.na(Bray1PExtractable), "Bray",
+                                                     "Olsen"))) %>%
+                   select(uid, siteID, plotID, horizonName, biogeoTopDepth, biogeoBottomDepth,
+                          phH2o, carbonTot, nitrogenTot, ctonRatio, 
+                          extractableP, pExtraction)) 
+
+# some samples have both Mehlich and Olsen done - I'm going to use Mehlich if it was used, and Olsen if not
+
+# Calculate average at each plot in a site
+# Separate cols for mineral vs organic, and total down to 30
+soil_initcnp_plot1 <- (soil_initcnp %>%
+                         group_by(siteID, plotID) %>%
+                         summarize(across(phH2o:extractableP, mean, na.rm=TRUE)) %>%
+                         mutate(across(c("phH2o", "carbonTot", "nitrogenTot", "extractableP"), 
+                                       round, digits=2)) %>%
+                         mutate(across(ctonRatio, round, digits=1)))
+soil_initcnp_plot2 <- (soil_initcnp %>%
+                         mutate(horizon = ifelse(grepl("O", horizonName), "O", "M")) %>%
+                         group_by(siteID, plotID, horizon) %>%
+                         summarize(across(phH2o:extractableP, mean, na.rm=TRUE)) %>%
+                         mutate(across(c("phH2o", "carbonTot", "nitrogenTot", "extractableP"), 
+                                       round, digits=2)) %>%
+                         mutate(across(ctonRatio, round, digits=1)) %>%
+                         pivot_wider(names_from=horizon,
+                                     values_from=phH2o:extractableP))
+soil_initcnp_plot <- left_join(soil_initcnp_plot1, soil_initcnp_plot2, by=c("siteID", "plotID"))
+
+# Calculate site-level averages
+soil_initcnp_site <- (soil_initcnp_plot %>%
+                        group_by(siteID) %>%
+                        summarize(across(phH2o:extractableP_O, mean, na.rm=TRUE)))
+soil_initp_site <- (soil_initcnp_site %>%
+                      select(siteID, extractableP, extractableP_M, extractableP_O))
+```
+
+# Foliar chemistry data
+
+Altogether, 1,076 foliar chemistry (C, N, and P concentration) samples representing 164 woody and herbaceous plant species at 47 terrestrial sites were accessed from the Plant foliar traits data product (DP1.10026.001). Foliar data come from one collection bout per site conducted between 2016-2019. 
+
+``` {r foliar chemistry}
+# Species data is in the field dataframe
+foliar_field <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10026", "stackedFiles", "cfc_fieldData.csv"), 
+  varFile=here("raw_data", "filesToStack10026", "stackedFiles", "variables_10026.csv"))
+foliar_field <- foliar_field %>% clean_names()
+
+# Foliar CN and other elements are in different data files - need to make a table for each and then combine
+foliar_cn <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10026", "stackedFiles", "cfc_carbonNitrogen.csv"), 
+  varFile=here("raw_data", "filesToStack10026", "stackedFiles", "variables_10026.csv"))
+foliar_cn <- foliar_cn %>% clean_names() %>%
+  rename(n_percent = nitrogen_percent,
+         c_percent = carbon_percent,
+         cn_ratio = c_nratio)
+
+# Foliar CN data has analytical reps - need to average them
+foliar_cn_mean <- (foliar_cn %>%
+                     group_by(domain_id, site_id, plot_id, sample_id) %>%
+                     summarize(across(d15n:cn_ratio, mean, na.rm=TRUE)))
+
+foliar_elements <- readTableNEON(
+  dataFile=here("raw_data", "filesToStack10026", "stackedFiles", "cfc_elements.csv"), 
+  varFile=here("raw_data", "filesToStack10026", "stackedFiles", "variables_10026.csv"))
+foliar_elements <- foliar_elements %>% clean_names()
+
+foliar_elements_mean <- (foliar_elements %>%
+                           group_by(domain_id, site_id, plot_id, sample_id) %>%
+                           summarize(across(foliar_phosphorus_conc:foliar_zinc_conc)))
+
+# Join elemental and CN data together
+foliar_chem_all <- left_join(foliar_cn_mean, foliar_elements_mean,
+                              by=c("sample_id","domain_id","site_id","plot_id")) %>%
+                      select(sample_id, plot_id, site_id, domain_id,
+                             d15n:cn_ratio,
+                             foliar_phosphorus_conc:foliar_zinc_conc) %>%
+                      mutate(np_ratio = n_percent / foliar_phosphorus_conc) %>%
+                      mutate(cp_ratio = c_percent / foliar_phosphorus_conc)
+
+# Finally, add in selected field data (so we know some info on the species)
+foliar_chem_field1 <- left_join(foliar_chem_all, foliar_field, 
+                                by=c("sample_id","domain_id","site_id","plot_id")) %>%
+  separate(scientific_name, into=c("genus", "species"),
+           remove=FALSE, extra="merge", fill="right") %>%
+  select(sample_id:cp_ratio, plot_type, collect_date, individual_id,
+         taxon_id, scientific_name, genus, species)
+```
+
+I also accessed some additional plant functional type data from the USDA Plants Database for the species represented in the NEON sampling.
+
+```{r add in plant functional type from usda plants data}
+taxa <- foliar_chem_field1 %>%
+  select(taxon_id)
+
+plants <- read.csv(here("raw_data/", "usda_plants2.csv"))
+
+taxa_vars <- plants %>%
+  filter(Symbol %in% taxa$taxon_id) %>%
+  select(Symbol, Division, Family, Leaf.Retention, Nitrogen.Fixation) %>%
+  clean_names() %>%
+  rename("taxon_id" = "symbol") %>%
+  mutate(type = ifelse(grepl("Coniferophyta", division), "conifer",
+                       ifelse(grepl("Magnoliophyta", division), "angiosperm", "other")), 
+         leaf_retention = fct_recode(leaf_retention, 
+                                     "deciduous"="No", "evergreen"="Yes", "not given"=""),
+         nitrogen_fixation = fct_recode(nitrogen_fixation, 
+                                        "high"="High", "low"="Low", "none"="None",
+                                        "not given"=""))
+
+foliar_chem_field2 <- left_join(foliar_chem_field1, taxa_vars, by="taxon_id")
+
+foliar_chem_field <- foliar_chem_field2
+
+# Save CSV
+write.csv(foliar_chem_field, here("data", "neon_foliar_chem.csv"), row.names=FALSE)
+```
+
+# Joining dataframes together for final analysis 
+
+## Joining site data together - soil and climate
+
+``` {r joining soil and climate data together}
+# Join ET data to rest of the site data
+site_clim1 <- neon_terr_clim %>%
+  left_join(., mod16_avg, by="siteID")
+
+site_clim2 <- site_clim1 %>%
+  left_join(., mod17_avg, by="siteID")
+
+site_clim <- site_clim2
+
+# Join N transformation data
+site_clim_soil1 <- left_join(site_clim, soil_chem_ntrans_site, by="siteID")
+# Join site averages to other data (climate, N transformation data)
+site_clim_soil2 <- left_join(site_clim_soil1, soil_initp_site, by="siteID")
+
+site_clim_soil3 <- site_clim_soil2 %>%
+  clean_names() %>%
+  rename(n_percent = nitrogen_percent,
+         organic_d13c = organicd13c,
+         cn_ratio = c_nratio,
+         cn_ratio_m = c_nratio_m,
+         cn_ratio_o = c_nratio_o)
+
+# Join in dominant LCC
+site_clim_soil4 <- site_clim_soil3 %>%
+  mutate(lcc = ifelse(grepl("Evergreen", dominant_nlcd_classes) 
+                      & grepl("Deciduous", dominant_nlcd_classes), "mixed forest", 
+                      ifelse(grepl("Deciduous", dominant_nlcd_classes), "deciduous forest",
+                             ifelse(grepl("Evergreen", dominant_nlcd_classes), "evergreen forest",
+                                    ifelse(grepl("Grassland", dominant_nlcd_classes), "grassland",
+                                           ifelse(grepl("Scrub", dominant_nlcd_classes), "scrub",
+                                                  ifelse(grepl("Crop", dominant_nlcd_classes), "crops",
+                                                         "something else"))))))) %>%
+  relocate(lcc, .after=dominant_nlcd_classes)
+  
+site_clim_soil <- site_clim_soil4
+```
+
+## Add foliar data to site data
+
+The best resolution would be to pair foliar data to soil data by plot, but that means that any plots that didn't have foliar data collected, or didn't have soil cores collected (not everything was done at every plot) would get thrown out. Instead, I will pair everything at the site level (coarser resolution, but more complete data).
+
+``` {r join foliar data to site data}
+# calculate site-mean foliar chemistry
+foliar_site <- (foliar_chem_all %>%
+                  group_by(site_id) %>%
+                  summarize(across(where(is.numeric), mean, na.rm=TRUE)))
+
+foliar_soil_site <- left_join(foliar_site, site_clim_soil, 
+                              by="site_id", suffix=c("_foliar", "_soil")) %>%
+  clean_names() %>%
+  rename(d13c_foliar = d13c,
+         c_percent_foliar = c_percent,
+         np_ratio_foliar = np_ratio,
+         cp_ratio_foliar = cp_ratio,
+         c_percent_soil = organic_c_percent,
+         c_percent_soil_m = organic_c_percent_m,
+         c_percent_soil_o = organic_c_percent_o,
+         d13c_soil = organic_d13c,
+         d13c_soil_m = organicd13c_m,
+         d13c_soil_o = organicd13c_o,
+         cn_ratio_soil_m = cn_ratio_m,
+         cn_ratio_soil_o = cn_ratio_o,
+         extractable_p_soil = extractable_p)
+
+foliar_site_alt <- (foliar_chem_all %>%
+                      group_by(site_id) %>%
+                      summarize(across(where(is.numeric), mean_sd, na.rm=TRUE)))
+foliar_soil_site_alt <- left_join(foliar_site_alt, site_clim_soil,
+                                  by="site_id")
+write.csv(foliar_soil_site_alt, here("data", "neon_data_site_avg_alt.csv"), row.names=FALSE)
+```
+
+# Joining data for random forest analysis - need ALL foliar points
+
+Goal: a dataframe that has ALL foliar chem data points paired wth site-averaged climate and soil data 
+
+``` {r foliar data frame for random forest analysis}
+foliar_soil_site_all <- left_join(foliar_chem_field, site_clim_soil, 
+                                  by="site_id", suffix=c("_foliar", "_soil")) %>%
+  mutate(genus = as.factor(genus)) %>%
+  rename(d13c_foliar = d13c,
+         c_percent_foliar = c_percent,
+         np_ratio_foliar = np_ratio,
+         cp_ratio_foliar = cp_ratio,
+         c_percent_soil = organic_c_percent,
+         c_percent_soil_m = organic_c_percent_m,
+         c_percent_soil_o = organic_c_percent_o,
+         d13c_soil = organic_d13c,
+         d13c_soil_m = organicd13c_m,
+         d13c_soil_o = organicd13c_o,
+         cn_ratio_soil_m = cn_ratio_m,
+         cn_ratio_soil_o = cn_ratio_o,
+         extractable_p_soil = extractable_p)
+
+write.csv(foliar_soil_site_all, here("data", "neon_foliar_chem_all_site_vars.csv"), row.names=FALSE)
+```
+
+# Dataframe for most common species (for within-species analysis)
+```{r common species dataframe}
+# Filter foliar field data for all species present at 5 or more sites
+common_species <- foliar_chem %>%
+                     group_by(scientific_name) %>%
+                     summarize(site_n = n_distinct(site_id)) %>%
+                     filter(site_n >= 5) %>%
+                     filter(!is.na(scientific_name)) %>%
+  filter(scientific_name != "Ulmus americana L.")
+
+# List of the common species scientific names
+common_species <- (common_species %>%
+                     select(scientific_name))
+
+# Select foliar data just for the most common species
+common_foliar <- foliar_chem %>%
+  filter(scientific_name %in% common_species$scientific_name)
+
+# Now add in selected site data
+site_dat_4_common <- site6 %>%
+  select(site_id, latitude, et_mm_avg, npp_kg_c_avg, mat_deg_c, map_mm, c_percent_soil, n_percent_soil, netnmin_ugpergperday,
+         cn_ratio_soil, extractable_p_soil, soilnh4_conc, soilno3_conc)
+
+common_foliar_site <- left_join(common_foliar, site_dat_4_common, by="site_id") %>%
+  rename(n_percent_foliar = n_percent,
+         c_percent_foliar = c_percent,
+         np_ratio_foliar = np_ratio,
+         cn_ratio_foliar = cn_ratio,
+         cp_ratio_foliar = cp_ratio)
+
+write.csv(common_foliar_site, here("data", "common_foliar_site.csv"), row.names=FALSE)
+```
