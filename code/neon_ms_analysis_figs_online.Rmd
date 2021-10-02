@@ -34,7 +34,6 @@ library(partykit)
 source(here("code", "variance_partitioning_function.R"))
 source(here("code", "ggplot_custom_themes.R"))
 source(here("code", "hsd_letters_function.R"))
-# Data cleanup and wrangling is in neon_data_cleanup.R
 
 # Make lists of summary functions for dplyr
 min_max <- list(
@@ -48,6 +47,7 @@ mean_sd <- list(
 )
 
 # Load data
+# Data cleanup code is in neon_data_cleanup.Rmd
 foliar_chem <- read.csv(here("data", "neon_foliar_chem.csv"))
 neon_site <- read.csv(here("data", "neon_data_site_avg.csv"))
 foliar_all_site <- read.csv(here("data", "neon_foliar_chem_all_site_vars.csv"))
@@ -663,7 +663,9 @@ fig3_var_part <- ggplot(all_var, aes(fill=group,
 fig3_var_part
 ```
 
-## Site variable importance calculations with VIP
+## Site variable importance calculations with random forest modeling
+
+Warning: this chunk takes a long time to run - the random forest models run for 10k iterations!!
 
 ``` {r random forest and VIP}
 foliar_n_cforest <- cforest(n_percent_foliar ~ extractable_p_soil + 
@@ -980,7 +982,7 @@ quru_n <- ggplot(quru, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar
   theme(axis.text.x = element_text(angle = 45, hjust=1),
         plot.title=element_text(face="italic"))
 
-arrow <- readPNG(here("manuscript", "prelim_figs", "arrow.png")) # need to load magick package
+arrow <- readPNG(here("data", "arrow.png")) # need to load magick package
 
 common_n_grid <- plot_grid(acru_n, list2_n, litu_n, qual_n, quru_n,
                            labels=c("A", "B", "C", "D", "E"), nrow=2, align="hv", axis="bl")
