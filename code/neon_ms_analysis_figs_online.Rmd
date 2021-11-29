@@ -254,35 +254,35 @@ lm2.7 <- lm(foliar_phosphorus_conc~netnmin_ugpergperday, data=neon_site)
 lm2.8 <- lm(foliar_phosphorus_conc~extractable_p_soil, data=neon_site)
 lm2.9 <- lm(foliar_phosphorus_conc~npp_kg_c_avg, data=neon_site)
 
-lm3.1 <- lm(np_ratio_foliar~latitude, data=neon_site)
-lm3.2 <- lm(np_ratio_foliar~et_mm_avg, data=neon_site)
-lm3.3 <- lm(np_ratio_foliar~mat_deg_c, data=neon_site)
-lm3.4 <- lm(np_ratio_foliar~map_mm, data=neon_site)
-lm3.5 <- lm(np_ratio_foliar~n_percent_soil, data=neon_site)
-lm3.6 <- lm(np_ratio_foliar~c_percent_soil, data=neon_site)
-lm3.7 <- lm(np_ratio_foliar~netnmin_ugpergperday, data=neon_site)
-lm3.8 <- lm(np_ratio_foliar~extractable_p_soil, data=neon_site)
-lm3.9 <- lm(np_ratio_foliar~npp_kg_c_avg, data=neon_site)
+lm3.1 <- lm(geom_np~latitude, data=neon_site)
+lm3.2 <- lm(geom_np~et_mm_avg, data=neon_site)
+lm3.3 <- lm(geom_np~mat_deg_c, data=neon_site)
+lm3.4 <- lm(geom_np~map_mm, data=neon_site)
+lm3.5 <- lm(geom_np~n_percent_soil, data=neon_site)
+lm3.6 <- lm(geom_np~c_percent_soil, data=neon_site)
+lm3.7 <- lm(geom_np~netnmin_ugpergperday, data=neon_site)
+lm3.8 <- lm(geom_np~extractable_p_soil, data=neon_site)
+lm3.9 <- lm(geom_np~npp_kg_c_avg, data=neon_site)
 
-lm4.1 <- lm(cn_ratio_foliar~latitude, data=neon_site)
-lm4.2 <- lm(cn_ratio_foliar~et_mm_avg, data=neon_site)
-lm4.3 <- lm(cn_ratio_foliar~mat_deg_c, data=neon_site)
-lm4.4 <- lm(cn_ratio_foliar~map_mm, data=neon_site)
-lm4.5 <- lm(cn_ratio_foliar~n_percent_soil, data=neon_site)
-lm4.6 <- lm(cn_ratio_foliar~c_percent_soil, data=neon_site)
-lm4.7 <- lm(cn_ratio_foliar~netnmin_ugpergperday, data=neon_site)
-lm4.8 <- lm(cn_ratio_foliar~extractable_p_soil, data=neon_site)
-lm4.9 <- lm(cn_ratio_foliar~npp_kg_c_avg, data=neon_site)
+lm4.1 <- lm(geom_cn~latitude, data=neon_site)
+lm4.2 <- lm(geom_cn~et_mm_avg, data=neon_site)
+lm4.3 <- lm(geom_cn~mat_deg_c, data=neon_site)
+lm4.4 <- lm(geom_cn~map_mm, data=neon_site)
+lm4.5 <- lm(geom_cn~n_percent_soil, data=neon_site)
+lm4.6 <- lm(geom_cn~c_percent_soil, data=neon_site)
+lm4.7 <- lm(geom_cn~netnmin_ugpergperday, data=neon_site)
+lm4.8 <- lm(geom_cn~extractable_p_soil, data=neon_site)
+lm4.9 <- lm(geom_cn~npp_kg_c_avg, data=neon_site)
 
-lm5.1 <- lm(cp_ratio_foliar~latitude, data=neon_site)
-lm5.2 <- lm(cp_ratio_foliar~et_mm_avg, data=neon_site)
-lm5.3 <- lm(cp_ratio_foliar~mat_deg_c, data=neon_site)
-lm5.4 <- lm(cp_ratio_foliar~map_mm, data=neon_site)
-lm5.5 <- lm(cp_ratio_foliar~n_percent_soil, data=neon_site)
-lm5.6 <- lm(cp_ratio_foliar~c_percent_soil, data=neon_site)
-lm5.7 <- lm(cp_ratio_foliar~netnmin_ugpergperday, data=neon_site)
-lm5.8 <- lm(cp_ratio_foliar~extractable_p_soil, data=neon_site)
-lm5.9 <- lm(cp_ratio_foliar~npp_kg_c_avg, data=neon_site)
+lm5.1 <- lm(geom_cp~latitude, data=neon_site)
+lm5.2 <- lm(geom_cp~et_mm_avg, data=neon_site)
+lm5.3 <- lm(geom_cp~mat_deg_c, data=neon_site)
+lm5.4 <- lm(geom_cp~map_mm, data=neon_site)
+lm5.5 <- lm(geom_cp~n_percent_soil, data=neon_site)
+lm5.6 <- lm(geom_cp~c_percent_soil, data=neon_site)
+lm5.7 <- lm(geom_cp~netnmin_ugpergperday, data=neon_site)
+lm5.8 <- lm(geom_cp~extractable_p_soil, data=neon_site)
+lm5.9 <- lm(geom_cp~npp_kg_c_avg, data=neon_site)
 ```
 
 ``` {r table 2 - foliar chemistry regression stats}
@@ -430,8 +430,8 @@ lat_p <- ggplot(neon_site, aes(x=latitude, y=foliar_phosphorus_conc)) +
   theme_katy_grid()  +
   theme(axis.title.x=element_blank())
 
-# Foliar N:P vs. latitude 
-lat_np <- ggplot(neon_site, aes(x=latitude, y=np_ratio_foliar)) +
+# geometric mean N:P vs. latitude 
+lat_np_geom <- ggplot(neon_site, aes(x=latitude, y=geom_np)) +
   geom_point() +
   geom_smooth(method="lm") +
   labs(x=expression(Latitude~(degree)), y="Foliar N:P ratio (mass)") +
@@ -441,8 +441,8 @@ lat_np <- ggplot(neon_site, aes(x=latitude, y=np_ratio_foliar)) +
   theme_katy_grid() +
   theme(axis.title.x=element_blank())
 
-# Foliar C:N vs latitude
-lat_cn <- ggplot(neon_site, aes(x=latitude, y=cn_ratio_foliar)) +
+# geometric mean C:N vs latitude
+lat_cn_geom <- ggplot(neon_site, aes(x=latitude, y=geom_cn)) +
   geom_point() +
   labs(x=expression(Latitude~(degree)), y="Foliar C:N ratio (mass)") +
   stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
@@ -450,8 +450,8 @@ lat_cn <- ggplot(neon_site, aes(x=latitude, y=cn_ratio_foliar)) +
   theme_katy_grid() +
   theme(axis.title.x=element_blank())
 
-# Foliar CP ratio vs latitude
-lat_cp <- ggplot(neon_site, aes(x=latitude, y=cp_ratio_foliar)) +
+# geometric mean C:P ratio vs latitude
+lat_cp_geom <- ggplot(neon_site, aes(x=latitude, y=geom_cp)) +
   geom_point() +
   geom_smooth(method="lm") +
   labs(x="", y="Foliar C:P ratio (mass)") +
@@ -482,7 +482,7 @@ et_p <- ggplot(neon_site, aes(x=et_mm_avg, y=foliar_phosphorus_conc)) +
   theme_katy_grid() +
   theme(axis.title.x=element_blank())
 
-et_np <- ggplot(neon_site, aes(x=et_mm_avg, y=np_ratio_foliar)) +
+et_np_geom <- ggplot(neon_site, aes(x=et_mm_avg, y=geom_np)) +
   geom_point() +
   geom_smooth(method="lm") +
   labs(x="Mean annual actual evapotranspiration (mm)", y="Foliar N:P ratio (mass)") +
@@ -492,7 +492,7 @@ et_np <- ggplot(neon_site, aes(x=et_mm_avg, y=np_ratio_foliar)) +
   theme_katy_grid() +
   theme(axis.title.x=element_blank())
 
-et_cn <- ggplot(neon_site, aes(x=et_mm_avg, y=cn_ratio_foliar)) +
+et_cn_geom <- ggplot(neon_site, aes(x=et_mm_avg, y=geom_cn)) +
   geom_point() +
   labs(x="Mean annual actual evapotranspiration (mm)", y="Foliar C:N ratio (mass)") +
   stat_cor(aes(label = paste(..rr.label.., ..p.label.., sep = "~`,`~")),
@@ -500,7 +500,7 @@ et_cn <- ggplot(neon_site, aes(x=et_mm_avg, y=cn_ratio_foliar)) +
   theme_katy_grid() + 
   theme(axis.title.x=element_blank())
 
-et_cp <- ggplot(neon_site, aes(x=et_mm_avg, y=cp_ratio_foliar)) +
+et_cp_geom <- ggplot(neon_site, aes(x=et_mm_avg, y=geom_cp)) +
   geom_point() +
   geom_smooth(method="lm") +
   labs(x="", y="Foliar C:P ratio (mass)") +
@@ -512,19 +512,19 @@ et_cp <- ggplot(neon_site, aes(x=et_mm_avg, y=cp_ratio_foliar)) +
 
 ## Combine latitude and AET regressions for full Fig. 1
 ``` {r fig 1 - latitude and aet regressions grid}
-lat_col <- plot_grid(lat_n, lat_cn, lat_p, lat_cp, lat_np, nrow=5, 
+lat_col <- plot_grid(lat_n, lat_cn_geom, lat_p, lat_cp_geom, lat_np_geom, nrow=5, 
                       align = "v", labels=c("A", "B", "C", "D", "E"))
 lat_col_label <- ggdraw(lat_col) +
   draw_label(expression(Latitude~(degree)), color="black", vjust=0, y=0)
 
-# make versions of et figs that have no y axis title (so they can be shared)
+# make versions of et figs that have no y axis title (so axes can be shared)
 et_n2 <- et_n + theme(axis.title.y=element_blank())
 et_p2 <- et_p + theme(axis.title.y=element_blank())
-et_cn2 <- et_cn + theme(axis.title.y=element_blank())
-et_np2 <- et_np + theme(axis.title.y=element_blank())
-et_cp2 <- et_cp + theme(axis.title.y=element_blank())
+et_cn_geom2 <- et_cn_geom + theme(axis.title.y=element_blank())
+et_np_geom2 <- et_np_geom + theme(axis.title.y=element_blank())
+et_cp_geom2 <- et_cp_geom + theme(axis.title.y=element_blank())
 
-et_col <- plot_grid(et_n2, et_cn2, et_p2, et_cp2, et_np2, nrow=5, 
+et_col <- plot_grid(et_n2, et_cn_geom2, et_p2, et_cp_geom2, et_np_geom2, nrow=5, 
                      align="v", labels=c("F", "G", "H", "I", "J"))
 et_col_label <- ggdraw(et_col) +
   draw_label(expression(AET~(mm~yr^-1)), color="black", vjust=0, y=0)
@@ -555,7 +555,7 @@ foliarp_soilp <- ggplot(neon_site, aes(x=extractable_p_soil, y=foliar_phosphorus
   stat_regline_equation(label.x=13, label.y=.28, size=4) +
   theme_katy_grid()
 
-foliarnp_soilnmin <- ggplot(neon_site, aes(x=netnmin_ugpergperday, y=np_ratio_foliar)) +
+foliarnp_soilnmin <- ggplot(neon_site, aes(x=netnmin_ugpergperday, y=geom_np)) +
   geom_point() +
   geom_smooth(method="lm") +
   labs(x=expression("Soil N mineralization rate"~(mu*g~g^-1~day^-1)), 
@@ -565,7 +565,7 @@ foliarnp_soilnmin <- ggplot(neon_site, aes(x=netnmin_ugpergperday, y=np_ratio_fo
   stat_regline_equation(label.x=0.2, label.y=18.75, size=4) +
   theme_katy_grid()
 
-foliarnp_soilp <- ggplot(neon_site, aes(x=extractable_p_soil, y=np_ratio_foliar)) +
+foliarnp_soilp <- ggplot(neon_site, aes(x=extractable_p_soil, y=geom_np)) +
   geom_point() +
   geom_smooth(method="lm") +
   labs(x=expression("Soil extractable P"~(mg~P~kg^-1~soil)), 
