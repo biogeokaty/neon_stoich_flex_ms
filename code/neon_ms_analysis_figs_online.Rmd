@@ -153,7 +153,7 @@ figs1_map_w_legend
 ``` {r table s1 - neon site characteristics}
 site_table <- neon_site %>%
   select(site_id, site_name, dominant_nlcd_classes, latitude, longitude, elev_m, 
-         mat_deg_c, map_mm, c_percent_soil, n_percent_soil, netnmin_ugpergperday, 
+         mat_deg_c, map_mm, c_percent_soil, n_percent_soil, cn_ratio, netnmin_ugpergperday, 
          extractable_p_soil, et_mm_avg, npp_kg_c_avg) %>%
   mutate(across(c_percent_soil, round, digits=1)) %>%
   mutate(across(n_percent_soil:netnmin_ugpergperday, round, digits=2)) %>%
@@ -179,6 +179,7 @@ site_range_table <- site_table %>%
          soil_c_range = paste(c_percent_soil_min, c_percent_soil_max, sep="-"),
          soil_n_range = paste(n_percent_soil_min, 
                               n_percent_soil_max, sep="-"),
+         soil_cn_range = paste(cn_ratio_min, cn_ratio_max, sep="-"),
          nmin_range = paste(netnmin_ugpergperday_min, netnmin_ugpergperday_max, sep="-"),
          soil_extractable_p_range = paste(extractable_p_soil_min, 
                                           extractable_p_soil_max, sep="-"),
@@ -818,12 +819,16 @@ fig4_vip_grid
 ## Subset foliar chem data by species and calculate significant differences in foliar N within a species among sites
 
 ``` {r subset by species and generate significance letters for N among sites}
-
 # ACRU
 acru <- common_foliar_site %>% 
   filter(taxon_id=="ACRU")
 anova(aov(n_percent_foliar ~ site_id, acru))
 acru_n_letters <- hsd_letters(acru$site_id, acru$n_percent_foliar) #hsd_letters() function comes from one of my custom scripts, will make an ANOVA and then calculate sig differences
+
+# also make frame of n count for acru at each site to add to figure
+acru_n_n <- acru %>%
+  count(site_id, taxon_id) %>%
+  mutate(n_text=paste("n", n, sep="="))
   
 # LIST2
 list2 <- common_foliar_site %>% 
@@ -831,20 +836,36 @@ list2 <- common_foliar_site %>%
 anova(aov(n_percent_foliar ~ site_id, list2))
 list2_n_letters <- hsd_letters(list2$site_id, list2$n_percent_foliar)
 
+list2_n_n <- list2 %>%
+  count(site_id, taxon_id) %>%
+  mutate(n_text=paste("n", n, sep="="))
+
 # LITU
 litu <- common_foliar_site %>% 
   filter(taxon_id=="LITU")
 litu_n_letters <- hsd_letters(litu$site_id, litu$n_percent_foliar)
+
+litu_n_n <- litu %>%
+  count(site_id, taxon_id) %>%
+  mutate(n_text=paste("n", n, sep="="))
 
 # QUAL
 qual <- common_foliar_site %>% 
   filter(taxon_id=="QUAL")
 qual_n_letters <- hsd_letters(qual$site_id, qual$n_percent_foliar)
 
+qual_n_n <- qual %>%
+  count(site_id, taxon_id) %>%
+  mutate(n_text=paste("n", n, sep="="))
+
 # QURU
 quru <- common_foliar_site %>% 
   filter(taxon_id=="QURU")
 quru_n_letters <- hsd_letters(quru$site_id, quru$n_percent_foliar)
+
+quru_n_n <- quru %>%
+  count(site_id, taxon_id) %>%
+  mutate(n_text=paste("n", n, sep="="))
 ```
 
 ## Table S1 - ANOVA table for effect of site on intraspecific foliar chemistry
@@ -931,10 +952,12 @@ flextable(species_site_table)
 
 ## Figure 5 - intraspecific flexibility in foliar N among sites
 
-``` {r fig 6 - intraspecific flexibility in foliar N among sites}
+``` {r fig 5 - intraspecific flexibility in foliar N among sites}
 acru_n <- ggplot(acru, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
   geom_boxplot() +
   geom_text(data=acru_n_letters, aes(x=x, y=3, label=letters), 
+            position=position_dodge(width=0.9)) +
+  geom_text(data=acru_n_n, aes(x=site_id, y=2.85, label=n_text),
             position=position_dodge(width=0.9)) +
   labs(x="Site", y="Foliar N (%)") +
   ggtitle("Acer rubrum") +
@@ -944,7 +967,9 @@ acru_n <- ggplot(acru, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar
 
 list2_n <- ggplot(list2, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
   geom_boxplot() +
-  geom_text(data=list2_n_letters, aes(x=x, y=3, label=letters), 
+  geom_text(data=list2_n_letters, aes(x=x, y=3.05, label=letters), 
+            position=position_dodge(width=0.9)) +
+    geom_text(data=list2_n_n, aes(x=site_id, y=2.9, label=n_text),
             position=position_dodge(width=0.9)) +
   labs(x="Site", y="Foliar N (%)") +
   ggtitle("Liquidambar styraciflua") +
@@ -954,7 +979,9 @@ list2_n <- ggplot(list2, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foli
 
 litu_n <- ggplot(litu, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
   geom_boxplot() +
-  geom_text(data=litu_n_letters, aes(x=x, y=3, label=letters), 
+  geom_text(data=litu_n_letters, aes(x=x, y=3.35, label=letters), 
+            position=position_dodge(width=0.9)) +
+    geom_text(data=litu_n_n, aes(x=site_id, y=3.2, label=n_text),
             position=position_dodge(width=0.9)) +
   labs(x="Site", y="Foliar N (%)") +
   ggtitle("Lirodendron tulipifera") +
@@ -964,7 +991,9 @@ litu_n <- ggplot(litu, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar
 
 qual_n <- ggplot(qual, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
   geom_boxplot() +
-  geom_text(data=qual_n_letters, aes(x=x, y=3, label=letters), 
+  geom_text(data=qual_n_letters, aes(x=x, y=3.25, label=letters), 
+            position=position_dodge(width=0.9)) +
+    geom_text(data=qual_n_n, aes(x=site_id, y=3.1, label=n_text),
             position=position_dodge(width=0.9)) +
   labs(x="Site", y="Foliar N (%)") +
   ggtitle("Quercus alba") +
@@ -975,6 +1004,8 @@ qual_n <- ggplot(qual, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar
 quru_n <- ggplot(quru, aes(x=fct_reorder(site_id, et_mm_avg), y=n_percent_foliar)) +
   geom_boxplot() +
   geom_text(data=quru_n_letters, aes(x=x, y=3, label=letters), 
+            position=position_dodge(width=0.9)) +
+    geom_text(data=quru_n_n, aes(x=site_id, y=2.85, label=n_text),
             position=position_dodge(width=0.9)) +
   labs(x="Site", y="Foliar N (%)") +
   ggtitle("Quercus rubra") +
